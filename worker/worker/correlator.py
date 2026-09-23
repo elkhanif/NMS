@@ -123,11 +123,12 @@ async def _correlate_new_down_events(db: AsyncSession) -> None:
         window_seconds = max(settings.correlation_window_seconds, await _max_check_interval(db, child_ids))
         window_end = down_event.created_at + timedelta(seconds=window_seconds)
 
+        window_start = down_event.created_at - timedelta(seconds=window_seconds)
         child_down_result = await db.execute(
             select(Event).where(
                 Event.event_type == EventType.DEVICE_DOWN,
                 Event.device_id.in_(child_ids),
-                Event.created_at >= down_event.created_at,
+                Event.created_at >= window_start,
                 Event.created_at <= window_end,
             )
         )
@@ -146,6 +147,8 @@ async def _correlate_new_down_events(db: AsyncSession) -> None:
         if ancestor_incident is not None:
             incident = ancestor_incident
             incident.affected_device_count += affected_delta
+            if confidence == IncidentConfidence.SUSPECTED:
+                incident.confidence = IncidentConfidence.SUSPECTED
         else:
             existing_result = await db.execute(
                 select(Incident).where(

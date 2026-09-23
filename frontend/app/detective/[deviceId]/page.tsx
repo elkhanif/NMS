@@ -137,7 +137,7 @@ export default function DetectiveInvestigationPage() {
                     <StatusBadge status={iface.oper_status} />
                   </td>
                   <td className="font-mono text-xs">{iface.mac_address || "Unknown"}</td>
-                  <td>{iface.speed_bps ? `${(iface.speed_bps / 1e9).toFixed(2)} Gbps` : "-"}</td>
+                  <td>{iface.speed_bps != null ? `${(iface.speed_bps / 1e9).toFixed(2)} Gbps` : "-"}</td>
                 </tr>
               ))}
             </tbody>

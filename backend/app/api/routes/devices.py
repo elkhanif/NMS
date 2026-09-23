@@ -161,11 +161,14 @@ async def get_device(
     result = await db.execute(
         select(Device)
         .where(Device.id == device_id)
-        .options(selectinload(Device.checks), selectinload(Device.interfaces))
+        .options(selectinload(Device.checks), selectinload(Device.interfaces), selectinload(Device.credentials))
     )
     device = result.scalar_one_or_none()
     if device is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
+
+    snmp_types = {CredentialType.SNMPV2C, CredentialType.SNMPV3}
+    device.has_snmp_credential = any(c.credential_type in snmp_types for c in device.credentials)
 
     latest_result = await db.execute(
         select(Metric)

@@ -21,7 +21,7 @@ import { TopologyCanvas } from "@/components/TopologyCanvas";
 import { useAuth } from "@/lib/auth-context";
 import { useDeviceMetrics, useIncident, useUpdateIncident } from "@/lib/api";
 
-function formatTime(t: string) {
+function formatTime(t: string | number) {
   return new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
@@ -46,7 +46,7 @@ export default function IncidentDetailPage() {
 
   if (isLoading || !incident) return <div className="text-gray-400">Loading incident...</div>;
 
-  const chartData = latencySeries?.points.map((p) => ({ time: p.time, value: p.value })) || [];
+  const chartData = latencySeries?.points.map((p) => ({ time: new Date(p.time).getTime(), value: p.value })) || [];
   const affectedIds = incident.affected_devices.map((d) => d.id);
   const relationshipNodes = incident.affected_devices
     .filter((d) => d.id !== incident.suspected_device_id)
@@ -136,12 +136,19 @@ export default function IncidentDetailPage() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
-                <XAxis dataKey="time" tickFormatter={formatTime} stroke="#6b7280" fontSize={11} />
+                <XAxis
+                  dataKey="time"
+                  type="number"
+                  domain={["dataMin", "dataMax"]}
+                  tickFormatter={formatTime}
+                  stroke="#6b7280"
+                  fontSize={11}
+                />
                 <YAxis stroke="#6b7280" fontSize={11} />
                 <Tooltip labelFormatter={formatTime} contentStyle={{ background: "#111827", border: "1px solid #1f2937" }} />
                 <ReferenceArea
-                  x1={incident.started_at}
-                  x2={incident.resolved_at || new Date().toISOString()}
+                  x1={new Date(incident.started_at).getTime()}
+                  x2={incident.resolved_at ? new Date(incident.resolved_at).getTime() : Date.now()}
                   fill="#ef4444"
                   fillOpacity={0.12}
                 />

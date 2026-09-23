@@ -78,6 +78,10 @@ async def create_relationship(
                 },
             )
         )
+        # The child now belongs to exactly one parent/port -- remove the stale
+        # edge so topology/correlation/detective queries can't nondeterministically
+        # resolve to the device's old (no-longer-true) parent.
+        await db.delete(prior)
 
     await write_audit(db, current_user, "topology.relationship.create", "device_relationship", edge.id)
     await db.commit()

@@ -22,6 +22,15 @@ function DetectiveSearchInner() {
   const router = useRouter();
   const { data, isLoading } = useDetectiveSearch(submitted);
 
+  // Keep in sync when the URL's `q` changes while this page stays mounted
+  // (e.g. the nav's global search box pushing a new /detective?q=... while
+  // the user is already on this page).
+  useEffect(() => {
+    setQuery(initialQ);
+    setSubmitted(initialQ);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQ]);
+
   useEffect(() => {
     if (data?.matches.length === 1) {
       router.push(`/detective/${data.matches[0].device_id}`);

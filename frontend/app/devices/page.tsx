@@ -345,14 +345,14 @@ export default function DevicesPage() {
           <tbody>
             {isLoading && (
               <tr>
-                <td colSpan={8} className="py-6 text-center text-gray-500">
+                <td colSpan={isConfigWriter ? 8 : 7} className="py-6 text-center text-gray-500">
                   Loading...
                 </td>
               </tr>
             )}
             {!isLoading && devices?.length === 0 && (
               <tr>
-                <td colSpan={8} className="py-6 text-center text-gray-500">
+                <td colSpan={isConfigWriter ? 8 : 7} className="py-6 text-center text-gray-500">
                   No devices found.
                 </td>
               </tr>
