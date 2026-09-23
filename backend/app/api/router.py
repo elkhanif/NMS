@@ -5,6 +5,7 @@ from app.api.routes import (
     alerts,
     auth,
     dashboard,
+    detective,
     devices,
     discovery,
     events,
@@ -28,3 +29,4 @@ api_router.include_router(events.router)
 api_router.include_router(topology.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(incidents.router)
+api_router.include_router(detective.router)
