@@ -6,13 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from nms_common.enums import CredentialType, DeviceStatus, DeviceType, MetricType
-from nms_common.models import Alert, Device, DeviceCheck, DeviceCredential, Event, Interface, Metric, User
+from nms_common.enums import CredentialType, DeviceStatus, DeviceType, EventSeverity, EventType, MetricType
+from nms_common.models import Alert, Device, DeviceAddress, DeviceCheck, DeviceCredential, Event, Interface, Metric, User
 
 from app.deps import get_current_user, get_db, require_config_writer
 from app.schemas.alert import AlertOut
 from app.schemas.device import (
     BulkCredentialIn,
+    DeviceAddressOut,
     DeviceCheckIn,
     DeviceCheckOut,
     DeviceCreate,
@@ -151,6 +152,19 @@ async def update_device(
     if device is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Device not found")
     data = payload.model_dump(exclude_unset=True)
+
+    if "default_gateway_ip" in data and data["default_gateway_ip"] != device.default_gateway_ip:
+        db.add(
+            Event(
+                device_id=device.id,
+                event_type=EventType.GATEWAY_CHANGED,
+                severity=EventSeverity.INFO,
+                message=f"{device.hostname} default gateway changed: "
+                f"{device.default_gateway_ip or 'Unknown'} -> {data['default_gateway_ip'] or 'Unknown'}",
+                event_metadata={"old_gateway": device.default_gateway_ip, "new_gateway": data["default_gateway_ip"]},
+            )
+        )
+
     for field, value in data.items():
         setattr(device, field, value)
     await write_audit(db, current_user, "device.update", "device", device_id, data)
@@ -200,6 +214,18 @@ async def upsert_check(
     await db.commit()
     await db.refresh(check)
     return check
+
+
+@router.get("/{device_id}/addresses", response_model=list[DeviceAddressOut])
+async def get_device_addresses(
+    device_id: uuid.UUID, db: AsyncSession = Depends(get_db), _user: User = Depends(get_current_user)
+) -> list[DeviceAddress]:
+    """IP/MAC history for a device -- backs Network Detective's "IP changes: N
+    times" summary and IP/MAC history search results."""
+    result = await db.execute(
+        select(DeviceAddress).where(DeviceAddress.device_id == device_id).order_by(DeviceAddress.first_seen_at.desc())
+    )
+    return list(result.scalars().all())
 
 
 @router.post("/{device_id}/credentials", response_model=DeviceCredentialOut, status_code=status.HTTP_201_CREATED)

@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     discovery_max_prefix_len: int = 20  # smallest allowed prefix (i.e. blocks /19 and larger sweeps)
     discovery_rate_pps: int = 20
 
+    # Network Detective / What's Happening: change detection & incident correlation
+    device_missing_after_seconds: int = 3600  # continuously DOWN this long -> one DEVICE_MISSING event
+    reconciliation_sweep_interval_seconds: int = 300
+    correlation_sweep_interval_seconds: int = 10
+    correlation_window_seconds: int = 120  # widened per-candidate by the slowest child check interval
+    correlation_min_children_for_suspected: int = 2  # >=N correlated children -> SUSPECTED, else POSSIBLE
+
     # Seeded on first boot if no users exist yet
     initial_admin_email: str = "admin@example.com"
     initial_admin_password: str = "change-me-immediately"

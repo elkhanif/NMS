@@ -116,6 +116,40 @@ class EventType(str, enum.Enum):
     ALERT_ACKNOWLEDGED = "ALERT_ACKNOWLEDGED"
     ALERT_RESOLVED = "ALERT_RESOLVED"
     DISCOVERY_COMPLETED = "DISCOVERY_COMPLETED"
+    # Change-detection events (Network Detective / What's Happening) -- these double as
+    # the "network changes" feed: a change IS an Event with one of these types, using
+    # event_metadata for old/new values, rather than a second table to keep in sync.
+    DEVICE_NEW = "DEVICE_NEW"
+    DEVICE_MISSING = "DEVICE_MISSING"
+    IP_CHANGED = "IP_CHANGED"
+    MAC_CHANGED = "MAC_CHANGED"
+    SWITCH_PORT_CHANGED = "SWITCH_PORT_CHANGED"
+    VLAN_CHANGED = "VLAN_CHANGED"
+    GATEWAY_CHANGED = "GATEWAY_CHANGED"
+    AP_ASSOCIATION_CHANGED = "AP_ASSOCIATION_CHANGED"
+
+
+class AddressSource(str, enum.Enum):
+    MANUAL = "MANUAL"
+    DISCOVERY = "DISCOVERY"
+    POLL_OBSERVED = "POLL_OBSERVED"
+
+
+class IncidentStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    RESOLVED = "RESOLVED"
+
+
+class IncidentConfidence(str, enum.Enum):
+    POSSIBLE = "POSSIBLE"
+    SUSPECTED = "SUSPECTED"
+    CONFIRMED = "CONFIRMED"  # only ever set by a human via PATCH /incidents/{id}, never by the correlator
+
+
+class IncidentEventRole(str, enum.Enum):
+    TRIGGER = "TRIGGER"
+    AFFECTED = "AFFECTED"
+    RECOVERY = "RECOVERY"
 
 
 class MonitoringJobStatus(str, enum.Enum):

@@ -5,7 +5,21 @@ raises AttributeError/ImportError at startup, this is the first file to check ag
 whatever `pysnmp` version actually resolved in the container -- everything else in the
 worker only depends on the plain-dict return shape of `poll_snmp_device`, so a version
 fixup is isolated to this module.
+
+Known limitation: `poll_snmp_device` makes ~17 sequential snmp_get/snmp_walk calls, so
+a target that's merely slow (not down) on every one of them could in the worst case
+need more wall-clock time than a single check's configured timeout, since the
+scheduler wraps the whole dispatch in one `asyncio.wait_for(..., timeout=check.timeout_seconds)`.
+`snmp_walk`'s own wall-clock deadline (see below) at least guarantees no single walk
+can run away past that budget on its own: without it, the bundled `mock-snmp` dev
+fixture's ifAlias table (which never hits a subtree boundary -- some snmpsim variation
+modules synthesize values for arbitrarily large indices) burned the full 2000-iteration
+cap on every poll, ~27s for that one walk alone. A real device's finitely-sized table
+hits the boundary within the first GETBULK response either way, so this doesn't change
+behavior against real gear -- it only bounds the pathological case.
 """
+
+import time
 
 from pysnmp.hlapi.v3arch.asyncio import (
     CommunityData,
@@ -99,6 +113,7 @@ OID_IF_OUT_OCTETS = "1.3.6.1.2.1.2.2.1.16"
 OID_IF_OUT_ERRORS = "1.3.6.1.2.1.2.2.1.20"
 OID_IF_OUT_DISCARDS = "1.3.6.1.2.1.2.2.1.19"
 OID_IF_SPEED = "1.3.6.1.2.1.2.2.1.5"
+OID_IF_PHYS_ADDRESS = "1.3.6.1.2.1.2.2.1.6"
 OID_IF_ALIAS = "1.3.6.1.2.1.31.1.1.1.18"
 OID_IF_HC_IN_OCTETS = "1.3.6.1.2.1.31.1.1.1.6"
 OID_IF_HC_OUT_OCTETS = "1.3.6.1.2.1.31.1.1.1.10"
@@ -134,7 +149,10 @@ async def snmp_walk(ip: str, auth, base_oid: str, port: int = 161, timeout: floa
 
     results: dict[str, object] = {}
     current_oid = base_oid
+    deadline = time.monotonic() + timeout
     for _ in range(2000):  # hard cap so a misbehaving agent can't loop the worker forever
+        if time.monotonic() > deadline:
+            break
         error_indication, error_status, _error_index, var_binds = await bulk_cmd(
             engine, auth, transport, ContextData(), 0, 25, ObjectType(ObjectIdentity(current_oid))
         )
@@ -157,6 +175,18 @@ async def snmp_walk(ip: str, auth, base_oid: str, port: int = 161, timeout: floa
 
 def _last_index(oid: str) -> str:
     return oid.rsplit(".", 1)[-1]
+
+
+def _format_mac(value: object) -> str | None:
+    """ifPhysAddress comes back as a 6-byte OCTET STRING; format it the same
+    aa:bb:cc:dd:ee:ff way as everything else in this app expects."""
+    try:
+        raw = bytes(value)
+    except Exception:
+        return None
+    if len(raw) != 6:
+        return None
+    return ":".join(f"{b:02x}" for b in raw)
 
 
 async def poll_snmp_device(ip: str, auth, port: int = 161, timeout: float = 5.0) -> dict:
@@ -204,6 +234,7 @@ async def poll_snmp_device(ip: str, auth, port: int = 161, timeout: float = 5.0)
             (OID_IF_ADMIN_STATUS, "admin_status"),
             (OID_IF_OPER_STATUS, "oper_status"),
             (OID_IF_SPEED, "speed_bps"),
+            (OID_IF_PHYS_ADDRESS, "mac_address"),
             (OID_IF_HC_IN_OCTETS, "in_octets"),
             (OID_IF_HC_OUT_OCTETS, "out_octets"),
             (OID_IF_IN_ERRORS, "errors_in"),
@@ -237,6 +268,8 @@ async def poll_snmp_device(ip: str, auth, port: int = 161, timeout: float = 5.0)
                 iface["name"] = str(iface["name"])
             if "alias" in iface:
                 iface["alias"] = str(iface["alias"])
+            if "mac_address" in iface:
+                iface["mac_address"] = _format_mac(iface["mac_address"])
     except Exception:
         pass
 

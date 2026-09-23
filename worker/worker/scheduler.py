@@ -98,7 +98,21 @@ class Scheduler:
                     self.active_polls -= 1
             if result.get("reachable"):
                 break
+
+        previous_status = device.status
         await self._collect(db, device, check, result)
+        await collectors.record_state_transition(db, device, previous_status)
+
+        if result.get("reachable"):
+            observed_mac = None
+            if check.check_type == CheckType.SNMP:
+                interfaces_with_mac = sorted(
+                    (i for i in result.get("interfaces", []) if i.get("mac_address")),
+                    key=lambda i: i.get("if_index", 0),
+                )
+                if interfaces_with_mac:
+                    observed_mac = interfaces_with_mac[0]["mac_address"]
+            await collectors.record_address_observation(db, device, observed_mac=observed_mac)
 
     async def _dispatch(self, db: AsyncSession, device: Device, check: DeviceCheck) -> dict:
         if check.check_type == CheckType.ICMP:

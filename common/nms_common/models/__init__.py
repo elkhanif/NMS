@@ -1,6 +1,7 @@
 from nms_common.models.alerting import Alert, AlertRule, Event
 from nms_common.models.core import (
     Device,
+    DeviceAddress,
     DeviceCheck,
     DeviceCredential,
     DeviceRelationship,
@@ -8,6 +9,7 @@ from nms_common.models.core import (
     Location,
     User,
 )
+from nms_common.models.incidents import DeviceStateHistory, Incident, IncidentEvent
 from nms_common.models.metrics import InterfaceMetric, Metric
 from nms_common.models.ops import (
     AuditLog,
@@ -25,6 +27,7 @@ __all__ = [
     "DeviceCredential",
     "Interface",
     "DeviceRelationship",
+    "DeviceAddress",
     "Metric",
     "InterfaceMetric",
     "AlertRule",
@@ -35,4 +38,7 @@ __all__ = [
     "DiscoveryResult",
     "AuditLog",
     "WorkerHeartbeat",
+    "DeviceStateHistory",
+    "Incident",
+    "IncidentEvent",
 ]

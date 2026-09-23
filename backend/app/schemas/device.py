@@ -4,7 +4,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from nms_common.enums import CheckType, CredentialType, DeviceStatus, DeviceType, InterfaceStatus
+from nms_common.enums import AddressSource, CheckType, CredentialType, DeviceStatus, DeviceType, InterfaceStatus
 
 from app.schemas.common import ORMModel
 
@@ -19,6 +19,8 @@ class DeviceCreate(BaseModel):
     location_id: uuid.UUID | None = None
     department: str | None = None
     primary_check_type: CheckType = CheckType.ICMP
+    serial_number: str | None = None
+    default_gateway_ip: str | None = None
 
     @field_validator("ip_address")
     @classmethod
@@ -37,6 +39,8 @@ class DeviceUpdate(BaseModel):
     department: str | None = None
     primary_check_type: CheckType | None = None
     is_monitored: bool | None = None
+    serial_number: str | None = None
+    default_gateway_ip: str | None = None
 
 
 class DeviceOut(ORMModel):
@@ -55,6 +59,8 @@ class DeviceOut(ORMModel):
     last_seen: datetime | None
     created_at: datetime
     has_snmp_credential: bool = False
+    serial_number: str | None = None
+    default_gateway_ip: str | None = None
 
 
 class DeviceCheckIn(BaseModel):
@@ -126,3 +132,13 @@ class DeviceCredentialOut(ORMModel):
     credential_type: CredentialType
     created_at: datetime
     updated_at: datetime
+
+
+class DeviceAddressOut(ORMModel):
+    id: uuid.UUID
+    ip_address: str
+    mac_address: str | None
+    source: AddressSource
+    is_current: bool
+    first_seen_at: datetime
+    last_seen_at: datetime

@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nms_common.enums import (
+    AddressSource,
     AlertSeverity,
     AlertStatus,
     DeviceStatus,
@@ -13,7 +14,7 @@ from nms_common.enums import (
     InterfaceStatus,
     MetricType,
 )
-from nms_common.models import Alert, Device, Event, Interface, InterfaceMetric, Metric
+from nms_common.models import Alert, Device, DeviceAddress, DeviceStateHistory, Event, Interface, InterfaceMetric, Metric
 
 from worker import alert_engine
 
@@ -55,6 +56,105 @@ async def update_reachability(db: AsyncSession, device: Device, reachable: bool)
         )
 
     await alert_engine.evaluate_unreachable(db, device, reachable)
+
+
+async def record_state_transition(db: AsyncSession, device: Device, previous_status: DeviceStatus) -> None:
+    """Writes one device_state_history row whenever this poll cycle's status update
+    (update_reachability + refresh_device_status, already applied by the caller)
+    actually changed device.status -- this is the numeric/interval-friendly source
+    for uptime %, "last outage window", and the correlator's timestamp math, kept
+    separate from the human-readable Event log. Also emits DEVICE_NEW the very
+    first time a device gets a status at all (no prior history row exists)."""
+    if device.status == previous_status:
+        return
+
+    prior = await db.execute(
+        select(DeviceStateHistory.id).where(DeviceStateHistory.device_id == device.id).limit(1)
+    )
+    is_first = prior.scalar_one_or_none() is None
+
+    if is_first:
+        db.add(
+            Event(
+                device_id=device.id,
+                event_type=EventType.DEVICE_NEW,
+                severity=EventSeverity.INFO,
+                message=f"{device.hostname} ({device.ip_address}) discovered and being monitored",
+            )
+        )
+
+    db.add(DeviceStateHistory(device_id=device.id, previous_status=previous_status, new_status=device.status))
+
+
+async def record_address_observation(db: AsyncSession, device: Device, observed_mac: str | None = None) -> None:
+    """Compares the currently-polled IP (always) and, when this poll cycle yielded
+    one (SNMP only, from the primary interface's ifPhysAddress), the observed MAC
+    against the last-known `device_addresses` row. Only ever called after a
+    reachable poll -- a failed/timed-out poll carries no trustworthy identity data.
+
+    `device_addresses` is the single source of truth for IP/MAC history;
+    `device.mac_address` is kept as a denormalized cache of the current row purely
+    for cheap search/display, always written from here, never independently.
+    """
+    result = await db.execute(
+        select(DeviceAddress)
+        .where(DeviceAddress.device_id == device.id, DeviceAddress.is_current.is_(True))
+        .limit(1)
+    )
+    current = result.scalar_one_or_none()
+    now = datetime.now(timezone.utc)
+
+    if current is None:
+        db.add(
+            DeviceAddress(
+                device_id=device.id,
+                ip_address=device.ip_address,
+                mac_address=observed_mac,
+                source=AddressSource.POLL_OBSERVED,
+            )
+        )
+        if observed_mac:
+            device.mac_address = observed_mac
+        return
+
+    ip_changed = current.ip_address != device.ip_address
+    mac_changed = bool(observed_mac) and current.mac_address != observed_mac
+
+    if not ip_changed and not mac_changed:
+        current.last_seen_at = now
+        return
+
+    current.is_current = False
+    db.add(
+        DeviceAddress(
+            device_id=device.id,
+            ip_address=device.ip_address,
+            mac_address=observed_mac if observed_mac else current.mac_address,
+            source=AddressSource.POLL_OBSERVED,
+        )
+    )
+
+    if ip_changed:
+        db.add(
+            Event(
+                device_id=device.id,
+                event_type=EventType.IP_CHANGED,
+                severity=EventSeverity.WARNING,
+                message=f"{device.hostname} IP changed: {current.ip_address} -> {device.ip_address}",
+                event_metadata={"old_ip": current.ip_address, "new_ip": device.ip_address},
+            )
+        )
+    if mac_changed:
+        db.add(
+            Event(
+                device_id=device.id,
+                event_type=EventType.MAC_CHANGED,
+                severity=EventSeverity.WARNING,
+                message=f"{device.hostname} MAC changed: {current.mac_address or 'unknown'} -> {observed_mac}",
+                event_metadata={"old_mac": current.mac_address, "new_mac": observed_mac},
+            )
+        )
+        device.mac_address = observed_mac
 
 
 async def refresh_device_status(db: AsyncSession, device: Device) -> None:
@@ -106,6 +206,7 @@ async def sync_interfaces(db: AsyncSession, device: Device, snmp_interfaces: lis
                 oper_status=oper_status,
                 admin_status=admin_status,
                 speed_bps=raw.get("speed_bps"),
+                mac_address=raw.get("mac_address"),
             )
             db.add(iface)
             await db.flush()
@@ -114,6 +215,7 @@ async def sync_interfaces(db: AsyncSession, device: Device, snmp_interfaces: lis
             iface.name = raw.get("name") or iface.name
             iface.alias = raw.get("alias")
             iface.speed_bps = raw.get("speed_bps") or iface.speed_bps
+            iface.mac_address = raw.get("mac_address") or iface.mac_address
             if iface.oper_status != oper_status:
                 iface.last_change_at = now
             iface.oper_status = oper_status

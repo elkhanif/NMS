@@ -1,12 +1,13 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from nms_common.db import Base
 from nms_common.enums import (
+    AddressSource,
     CheckType,
     CredentialType,
     DeviceStatus,
@@ -58,6 +59,8 @@ class Device(Base, UUIDPKMixin, TimestampMixin):
     primary_check_type: Mapped[CheckType] = mapped_column(default=CheckType.ICMP)
     is_monitored: Mapped[bool] = mapped_column(Boolean, default=True)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    serial_number: Mapped[str | None] = mapped_column(String(255))
+    default_gateway_ip: Mapped[str | None] = mapped_column(String(45))
 
     location: Mapped[Location | None] = relationship(back_populates="devices")
     checks: Mapped[list["DeviceCheck"]] = relationship(back_populates="device", cascade="all, delete-orphan")
@@ -65,6 +68,7 @@ class Device(Base, UUIDPKMixin, TimestampMixin):
         back_populates="device", cascade="all, delete-orphan"
     )
     interfaces: Mapped[list["Interface"]] = relationship(back_populates="device", cascade="all, delete-orphan")
+    addresses: Mapped[list["DeviceAddress"]] = relationship(back_populates="device", cascade="all, delete-orphan")
 
 
 class DeviceCheck(Base, UUIDPKMixin, TimestampMixin):
@@ -142,3 +146,26 @@ class DeviceRelationship(Base, UUIDPKMixin, CreatedAtMixin):
         UUID(as_uuid=True), ForeignKey("interfaces.id", ondelete="SET NULL")
     )
     discovered: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class DeviceAddress(Base, UUIDPKMixin):
+    """IP/MAC history for a device -- the single source of truth for "IP changed N
+    times" and IP/MAC search history (Network Detective). `is_current` marks the
+    presently-active row; flipping it when an observed IP/MAC no longer matches is
+    exactly how an identity change gets detected and timestamped (see
+    worker.collectors.record_address_observation)."""
+
+    __tablename__ = "device_addresses"
+    __table_args__ = (Index("ix_device_addresses_device_current", "device_id", "is_current"),)
+
+    device_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("devices.id", ondelete="CASCADE"), index=True
+    )
+    ip_address: Mapped[str] = mapped_column(String(45), index=True)
+    mac_address: Mapped[str | None] = mapped_column(String(17), index=True)
+    source: Mapped[AddressSource] = mapped_column(default=AddressSource.POLL_OBSERVED)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    device: Mapped[Device] = relationship(back_populates="addresses")
