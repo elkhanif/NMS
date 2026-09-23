@@ -5,7 +5,7 @@ from sqlalchemy import text
 
 from nms_common.db import get_engine
 
-from worker import discovery, heartbeat, reconciliation
+from worker import correlator, discovery, heartbeat, reconciliation
 from worker.scheduler import Scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
@@ -37,6 +37,7 @@ async def main() -> None:
         heartbeat.run_forever(scheduler),
         discovery.run_forever(),
         reconciliation.run_forever(),
+        correlator.run_forever(),
     )
 
 

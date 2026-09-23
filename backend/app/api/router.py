@@ -8,6 +8,7 @@ from app.api.routes import (
     devices,
     discovery,
     events,
+    incidents,
     interfaces,
     locations,
     topology,
@@ -26,3 +27,4 @@ api_router.include_router(alert_rules.router)
 api_router.include_router(events.router)
 api_router.include_router(topology.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(incidents.router)
