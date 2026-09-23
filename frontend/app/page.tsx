@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import Link from "next/link";
+import { useMemo, useState, type ReactNode } from "react";
 import {
   Bar,
   BarChart,
@@ -20,6 +21,9 @@ import { SummaryCard } from "@/components/SummaryCard";
 import {
   useDashboardChart,
   useDashboardSummary,
+  useDevices,
+  useEvents,
+  useIncidents,
   useLocations,
   useStatusDistribution,
 } from "@/lib/api";
@@ -69,6 +73,20 @@ export default function DashboardPage() {
   const { data: availability } = useDashboardChart("availability");
   const { data: alertTrend } = useDashboardChart("alert-trend");
 
+  const { data: openIncidents } = useIncidents({ status: "OPEN" });
+  const { data: changes } = useEvents({ category: "change" });
+  const { data: allDevices } = useDevices();
+
+  const brokenDevices = useMemo(
+    () => (allDevices || []).filter((d) => d.status === "DOWN" || d.status === "CRITICAL").slice(0, 5),
+    [allDevices]
+  );
+  const isHealthy = Boolean(summary) && summary!.critical === 0 && summary!.offline === 0 && !openIncidents?.length;
+  const topIncident = openIncidents?.[0];
+  const affectedCount = openIncidents?.length
+    ? openIncidents.reduce((sum, inc) => sum + inc.affected_device_count, 0)
+    : brokenDevices.length;
+
   const heartbeatAge = summary?.worker_last_heartbeat_at
     ? (Date.now() - new Date(summary.worker_last_heartbeat_at).getTime()) / 1000
     : null;
@@ -89,6 +107,68 @@ export default function DashboardPage() {
             : workerStale
               ? `stale (${Math.round(heartbeatAge)}s ago)`
               : `healthy (${Math.round(heartbeatAge)}s ago)`}
+        </div>
+      </div>
+
+      {/* NOC-style "answer the question" strip */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="card">
+          <div className="text-xs uppercase tracking-wide text-gray-500">Is the network healthy?</div>
+          <div className={`mt-1 text-lg font-semibold ${isHealthy ? "text-status-up" : "text-status-critical"}`}>
+            {isHealthy ? "Yes" : "No"}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="text-xs uppercase tracking-wide text-gray-500">What is broken?</div>
+          {brokenDevices.length ? (
+            <ul className="mt-1 flex flex-col gap-0.5 text-sm">
+              {brokenDevices.map((d) => (
+                <li key={d.id}>
+                  <Link href={`/detective/${d.id}`} className="text-gray-100 hover:underline">
+                    {d.hostname}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-1 text-sm text-gray-500">Nothing broken.</div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="text-xs uppercase tracking-wide text-gray-500">What changed?</div>
+          {changes?.length ? (
+            <ul className="mt-1 flex flex-col gap-0.5 text-xs text-gray-300">
+              {changes.slice(0, 3).map((e) => (
+                <li key={e.id} className="truncate">
+                  {e.message}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="mt-1 text-sm text-gray-500">No recent changes.</div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="text-xs uppercase tracking-wide text-gray-500">Devices affected</div>
+          <div className="mt-1 text-lg font-semibold text-gray-100">{affectedCount}</div>
+        </div>
+
+        <div className="card">
+          <div className="text-xs uppercase tracking-wide text-gray-500">Where to investigate?</div>
+          {topIncident ? (
+            <Link href={`/incidents/${topIncident.id}`} className="mt-1 block text-sm text-blue-400 hover:underline">
+              {topIncident.title}
+            </Link>
+          ) : brokenDevices[0] ? (
+            <Link href={`/detective/${brokenDevices[0].id}`} className="mt-1 block text-sm text-blue-400 hover:underline">
+              {brokenDevices[0].hostname}
+            </Link>
+          ) : (
+            <div className="mt-1 text-sm text-gray-500">Nothing to investigate.</div>
+          )}
         </div>
       </div>
 

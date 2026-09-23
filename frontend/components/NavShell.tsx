@@ -2,8 +2,8 @@
 
 import clsx from "clsx";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, type ReactNode } from "react";
 
 import { useAuth } from "@/lib/auth-context";
 
@@ -28,6 +28,32 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/settings/users", label: "Users", adminOnly: true },
 ];
 
+function GlobalSearch() {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+
+  return (
+    <form
+      className="mb-3 px-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const trimmed = q.trim();
+        if (trimmed) {
+          router.push(`/detective?q=${encodeURIComponent(trimmed)}`);
+          setQ("");
+        }
+      }}
+    >
+      <input
+        className="input w-full text-xs"
+        placeholder="Search IP, MAC, hostname..."
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+    </form>
+  );
+}
+
 export function NavShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { email, role, isAdmin, isConfigWriter, logout, loading } = useAuth();
@@ -41,6 +67,7 @@ export function NavShell({ children }: { children: ReactNode }) {
           <div className="text-lg font-bold text-gray-100">Mini NMS</div>
           <div className="text-xs text-gray-500">Network Monitoring</div>
         </div>
+        <GlobalSearch />
         {NAV_ITEMS.filter((item) => {
           if (item.adminOnly && !isAdmin) return false;
           if (item.configWriterOnly && !isConfigWriter) return false;

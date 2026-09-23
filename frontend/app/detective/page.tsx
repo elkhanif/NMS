@@ -1,14 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 
 import { useDetectiveSearch } from "@/lib/api";
 
 export default function DetectivePage() {
-  const [query, setQuery] = useState("");
-  const [submitted, setSubmitted] = useState("");
+  return (
+    <Suspense fallback={<div className="text-gray-400">Loading...</div>}>
+      <DetectiveSearchInner />
+    </Suspense>
+  );
+}
+
+function DetectiveSearchInner() {
+  const searchParams = useSearchParams();
+  const initialQ = searchParams.get("q") || "";
+  const [query, setQuery] = useState(initialQ);
+  const [submitted, setSubmitted] = useState(initialQ);
   const router = useRouter();
   const { data, isLoading } = useDetectiveSearch(submitted);
 
