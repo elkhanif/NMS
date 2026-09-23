@@ -78,6 +78,7 @@ export interface Device {
   is_monitored: boolean;
   last_seen: string | null;
   created_at: string;
+  has_snmp_credential: boolean;
 }
 
 export interface DeviceCheck {

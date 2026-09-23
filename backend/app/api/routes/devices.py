@@ -6,12 +6,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from nms_common.enums import DeviceStatus, DeviceType, MetricType
+from nms_common.enums import CredentialType, DeviceStatus, DeviceType, MetricType
 from nms_common.models import Alert, Device, DeviceCheck, DeviceCredential, Event, Interface, Metric, User
 
 from app.deps import get_current_user, get_db, require_config_writer
 from app.schemas.alert import AlertOut
 from app.schemas.device import (
+    BulkCredentialIn,
     DeviceCheckIn,
     DeviceCheckOut,
     DeviceCreate,
@@ -54,10 +55,14 @@ async def list_devices(
     if search:
         like = f"%{search}%"
         stmt = stmt.where((Device.hostname.ilike(like)) | (Device.ip_address.ilike(like)))
-    stmt = stmt.order_by(Device.hostname).limit(limit).offset(offset)
+    stmt = stmt.order_by(Device.hostname).limit(limit).offset(offset).options(selectinload(Device.credentials))
 
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    devices = list(result.scalars().all())
+    snmp_types = {CredentialType.SNMPV2C, CredentialType.SNMPV3}
+    for device in devices:
+        device.has_snmp_credential = any(c.credential_type in snmp_types for c in device.credentials)
+    return devices
 
 
 @router.post("/", response_model=DeviceOut, status_code=status.HTTP_201_CREATED)
@@ -74,6 +79,33 @@ async def create_device(
     await write_audit(db, current_user, "device.create", "device", device.id, {"hostname": device.hostname})
     await db.commit()
     return device
+
+
+@router.post("/bulk-credentials", status_code=status.HTTP_200_OK)
+async def bulk_set_credentials(
+    payload: BulkCredentialIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_config_writer),
+) -> dict:
+    """Applies one credential to many devices at once (e.g. the same SNMPv2c
+    community string across a batch of freshly-imported devices) instead of
+    requiring a separate visit to each device's page."""
+    result = await db.execute(select(Device.id).where(Device.id.in_(payload.device_ids)))
+    existing_ids = set(result.scalars().all())
+
+    for device_id in existing_ids:
+        await upsert_credential(db, device_id, payload.credential_type, payload.payload)
+
+    await write_audit(
+        db,
+        current_user,
+        "device.credential.bulk_set",
+        "device",
+        None,
+        {"credential_type": payload.credential_type, "device_count": len(existing_ids)},
+    )
+    await db.commit()
+    return {"applied_count": len(existing_ids), "skipped_ids": [str(d) for d in payload.device_ids if d not in existing_ids]}
 
 
 @router.get("/{device_id}", response_model=DeviceDetailOut)

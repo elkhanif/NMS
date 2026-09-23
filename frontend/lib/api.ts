@@ -157,6 +157,18 @@ export function useDeviceCredentials(deviceId: string) {
   });
 }
 
+export function useBulkSetCredential() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { device_ids: string[]; credential_type: string; payload: Record<string, string> }) =>
+      apiFetch<{ applied_count: number; skipped_ids: string[] }>("devices/bulk-credentials", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["devices"] }),
+  });
+}
+
 export function useCreateDevice() {
   const qc = useQueryClient();
   return useMutation({

@@ -54,6 +54,7 @@ class DeviceOut(ORMModel):
     is_monitored: bool
     last_seen: datetime | None
     created_at: datetime
+    has_snmp_credential: bool = False
 
 
 class DeviceCheckIn(BaseModel):
@@ -104,6 +105,16 @@ class DeviceCredentialIn(BaseModel):
     """Write-only: payload is the raw secret (e.g. SNMP community string, HTTP basic
     creds). It is encrypted server-side and never echoed back in any response."""
 
+    credential_type: CredentialType
+    payload: dict
+
+
+class BulkCredentialIn(BaseModel):
+    """Applies the same SNMP credential to many devices in one call, so an operator
+    doesn't have to open each device individually just to set the same community
+    string (or the same SNMPv3 user) everywhere."""
+
+    device_ids: list[uuid.UUID]
     credential_type: CredentialType
     payload: dict
 
