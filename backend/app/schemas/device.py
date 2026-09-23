@@ -107,6 +107,20 @@ class DeviceDetailOut(DeviceOut):
     latest_metrics: list[LatestMetricOut] = []
 
 
+class BulkCheckIn(BaseModel):
+    """Applies the same monitoring check (type, interval, timeout, retries, config)
+    to many devices in one call, so an operator doesn't have to open each device
+    individually just to set up the same ICMP/TCP/HTTP/SNMP check everywhere."""
+
+    device_ids: list[uuid.UUID]
+    check_type: CheckType
+    enabled: bool = True
+    config: dict = Field(default_factory=dict)
+    interval_seconds: int = 60
+    timeout_seconds: int = 5
+    retries: int = 1
+
+
 class DeviceCredentialIn(BaseModel):
     """Write-only: payload is the raw secret (e.g. SNMP community string, HTTP basic
     creds). It is encrypted server-side and never echoed back in any response."""

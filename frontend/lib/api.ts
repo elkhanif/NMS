@@ -174,6 +174,26 @@ export function useBulkSetCredential() {
   });
 }
 
+export function useBulkSetCheck() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      device_ids: string[];
+      check_type: string;
+      enabled?: boolean;
+      config?: Record<string, unknown>;
+      interval_seconds?: number;
+      timeout_seconds?: number;
+      retries?: number;
+    }) =>
+      apiFetch<{ applied_count: number; skipped_ids: string[] }>("devices/bulk-checks", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["devices"] }),
+  });
+}
+
 export function useCreateDevice() {
   const qc = useQueryClient();
   return useMutation({

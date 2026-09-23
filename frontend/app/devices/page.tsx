@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { StatusBadge } from "@/components/StatusBadge";
-import { useBulkSetCredential, useCreateDevice, useDevices, type DeviceFilters } from "@/lib/api";
+import { useBulkSetCheck, useBulkSetCredential, useCreateDevice, useDevices, type DeviceFilters } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import type { DeviceStatus, DeviceType } from "@/lib/types";
+import type { CheckType, DeviceStatus, DeviceType } from "@/lib/types";
 
 const DEVICE_TYPES: DeviceType[] = [
   "ROUTER",
@@ -21,6 +21,7 @@ const DEVICE_TYPES: DeviceType[] = [
   "GENERIC",
 ];
 const STATUSES: DeviceStatus[] = ["UP", "WARNING", "CRITICAL", "DOWN", "UNKNOWN"];
+const CHECK_TYPES: CheckType[] = ["ICMP", "TCP", "HTTP", "HTTPS", "SNMP"];
 const AUTH_PROTOCOLS = ["SHA", "MD5", "SHA224", "SHA256", "SHA384", "SHA512"];
 const PRIV_PROTOCOLS = ["AES", "AES192", "AES256", "DES", "3DES"];
 
@@ -31,15 +32,23 @@ export default function DevicesPage() {
   const { isConfigWriter } = useAuth();
   const createDevice = useCreateDevice();
   const bulkSetCredential = useBulkSetCredential();
+  const bulkSetCheck = useBulkSetCheck();
   const [selectedDevices, setSelectedDevices] = useState<Set<string>>(new Set());
   const [showBulkCredential, setShowBulkCredential] = useState(false);
   const [bulkCredentialType, setBulkCredentialType] = useState<"SNMPV2C" | "SNMPV3">("SNMPV2C");
+  const [showBulkCheck, setShowBulkCheck] = useState(false);
+  const [bulkCheckType, setBulkCheckType] = useState<CheckType>("ICMP");
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-gray-100">Devices</h1>
         <div className="flex gap-2">
+          {isConfigWriter && selectedDevices.size > 0 && (
+            <button className="btn-secondary" onClick={() => setShowBulkCheck((v) => !v)}>
+              {showBulkCheck ? "Cancel" : `Set monitoring config (${selectedDevices.size})`}
+            </button>
+          )}
           {isConfigWriter && selectedDevices.size > 0 && (
             <button className="btn-secondary" onClick={() => setShowBulkCredential((v) => !v)}>
               {showBulkCredential ? "Cancel" : `Set SNMP credential (${selectedDevices.size})`}
@@ -52,6 +61,83 @@ export default function DevicesPage() {
           )}
         </div>
       </div>
+
+      {showBulkCheck && (
+        <form
+          className="card flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            const device_ids = Array.from(selectedDevices);
+            const config: Record<string, unknown> = {};
+            if (bulkCheckType === "TCP" || bulkCheckType === "HTTP" || bulkCheckType === "HTTPS") {
+              const port = form.get("port");
+              if (port) config.port = Number(port);
+            }
+            bulkSetCheck.mutate(
+              {
+                device_ids,
+                check_type: bulkCheckType,
+                enabled: true,
+                config,
+                interval_seconds: Number(form.get("interval_seconds") || 60),
+                timeout_seconds: Number(form.get("timeout_seconds") || 5),
+                retries: Number(form.get("retries") || 1),
+              },
+              {
+                onSuccess: () => {
+                  setShowBulkCheck(false);
+                  setSelectedDevices(new Set());
+                },
+              }
+            );
+          }}
+        >
+          <p className="text-xs text-gray-400">
+            Applies the same monitoring check to all {selectedDevices.size} selected device(s) at once.
+          </p>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              Check type
+              <select
+                className="input"
+                value={bulkCheckType}
+                onChange={(e) => setBulkCheckType(e.target.value as CheckType)}
+              >
+                {CHECK_TYPES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              Port (TCP/HTTP)
+              <input name="port" className="input w-24" placeholder="optional" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              Interval (s)
+              <input name="interval_seconds" className="input w-24" defaultValue={60} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              Timeout (s)
+              <input name="timeout_seconds" className="input w-20" defaultValue={5} />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              Retries
+              <input name="retries" className="input w-16" defaultValue={1} />
+            </label>
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="submit" className="btn-primary w-fit" disabled={bulkSetCheck.isPending}>
+              {bulkSetCheck.isPending ? "Applying..." : `Apply to ${selectedDevices.size} device(s)`}
+            </button>
+            {bulkSetCheck.isError && (
+              <span className="text-xs text-red-400">{(bulkSetCheck.error as Error).message}</span>
+            )}
+          </div>
+        </form>
+      )}
 
       {showBulkCredential && (
         <form

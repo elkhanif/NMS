@@ -12,6 +12,7 @@ from nms_common.models import Alert, Device, DeviceAddress, DeviceCheck, DeviceC
 from app.deps import get_current_user, get_db, require_config_writer
 from app.schemas.alert import AlertOut
 from app.schemas.device import (
+    BulkCheckIn,
     BulkCredentialIn,
     DeviceAddressOut,
     DeviceCheckIn,
@@ -104,6 +105,50 @@ async def bulk_set_credentials(
         "device",
         None,
         {"credential_type": payload.credential_type, "device_count": len(existing_ids)},
+    )
+    await db.commit()
+    return {"applied_count": len(existing_ids), "skipped_ids": [str(d) for d in payload.device_ids if d not in existing_ids]}
+
+
+@router.post("/bulk-checks", status_code=status.HTTP_200_OK)
+async def bulk_set_checks(
+    payload: BulkCheckIn,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_config_writer),
+) -> dict:
+    """Applies one monitoring check (type, interval, timeout, retries, config) to
+    many devices at once -- same upsert-by-(device_id, check_type) semantics as the
+    single-device PUT /{device_id}/checks, just looped over a batch."""
+    result = await db.execute(select(Device.id).where(Device.id.in_(payload.device_ids)))
+    existing_ids = set(result.scalars().all())
+
+    check_data = {
+        "check_type": payload.check_type,
+        "enabled": payload.enabled,
+        "config": payload.config,
+        "interval_seconds": payload.interval_seconds,
+        "timeout_seconds": payload.timeout_seconds,
+        "retries": payload.retries,
+    }
+
+    for device_id in existing_ids:
+        existing_check_result = await db.execute(
+            select(DeviceCheck).where(DeviceCheck.device_id == device_id, DeviceCheck.check_type == payload.check_type)
+        )
+        check = existing_check_result.scalar_one_or_none()
+        if check is None:
+            db.add(DeviceCheck(device_id=device_id, **check_data))
+        else:
+            for field, value in check_data.items():
+                setattr(check, field, value)
+
+    await write_audit(
+        db,
+        current_user,
+        "device.check.bulk_upsert",
+        "device",
+        None,
+        {"check_type": payload.check_type, "device_count": len(existing_ids)},
     )
     await db.commit()
     return {"applied_count": len(existing_ids), "skipped_ids": [str(d) for d in payload.device_ids if d not in existing_ids]}
