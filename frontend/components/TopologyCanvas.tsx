@@ -94,18 +94,30 @@ export function TopologyCanvas({
   nodes,
   edges,
   highlightId,
+  highlightIds,
+  onNodeClick,
 }: {
   nodes: TopologyNode[];
   edges: TopologyEdge[];
   highlightId?: string | null;
+  /** A set of node ids to highlight distinctly from `highlightId` -- used to mark an
+   * incident's affected devices (red glow) rather than a single search match (blue ring). */
+  highlightIds?: string[];
+  onNodeClick?: (deviceId: string) => void;
 }) {
   const { nodes: rfNodes, edges: rfEdges } = useMemo(() => layout(nodes, edges), [nodes, edges]);
+  const highlightSet = useMemo(() => new Set(highlightIds || []), [highlightIds]);
 
   const nodesWithLabel: Node[] = rfNodes.map((n) => {
     const isHighlighted = n.id === highlightId;
+    const isIncidentAffected = highlightSet.has(n.id);
     return {
       ...n,
-      style: { ...n.style, boxShadow: isHighlighted ? "0 0 0 3px #3b82f6" : undefined },
+      style: {
+        ...n.style,
+        boxShadow: isHighlighted ? "0 0 0 3px #3b82f6" : isIncidentAffected ? "0 0 0 3px #f97316" : undefined,
+        cursor: onNodeClick ? "pointer" : undefined,
+      },
       data: {
         label: (
           <div className="text-xs">
@@ -119,7 +131,14 @@ export function TopologyCanvas({
 
   return (
     <div style={{ height: "70vh" }} className="rounded-lg border border-panelborder overflow-hidden">
-      <ReactFlow nodes={nodesWithLabel} edges={rfEdges} fitView minZoom={0.2} maxZoom={2}>
+      <ReactFlow
+        nodes={nodesWithLabel}
+        edges={rfEdges}
+        fitView
+        minZoom={0.2}
+        maxZoom={2}
+        onNodeClick={onNodeClick ? (_, node) => onNodeClick(node.id) : undefined}
+      >
         <Background color="#1f2937" gap={20} />
         <Controls />
         <MiniMap pannable zoomable style={{ background: "#111827" }} nodeColor={() => "#374151"} />

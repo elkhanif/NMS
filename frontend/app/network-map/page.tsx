@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
-import { useTopology } from "@/lib/api";
+import { useIncidents, useTopology } from "@/lib/api";
 import type { DeviceStatus, DeviceType } from "@/lib/types";
 
+import { StatusBadge } from "@/components/StatusBadge";
 import { TopologyCanvas } from "@/components/TopologyCanvas";
 
 const DEVICE_TYPES: DeviceType[] = [
@@ -22,7 +25,9 @@ const DEVICE_TYPES: DeviceType[] = [
 const STATUSES: DeviceStatus[] = ["UP", "WARNING", "CRITICAL", "DOWN", "UNKNOWN"];
 
 export default function NetworkMapPage() {
+  const router = useRouter();
   const { data: graph, isLoading } = useTopology();
+  const { data: openIncidents } = useIncidents({ status: "OPEN" });
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<DeviceType | "">("");
   const [statusFilter, setStatusFilter] = useState<DeviceStatus | "">("");
@@ -52,6 +57,24 @@ export default function NetworkMapPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold text-gray-100">Network Map</h1>
+
+      {openIncidents && openIncidents.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-md border border-orange-500/40 bg-orange-500/10 p-3">
+          {openIncidents.map((inc) => (
+            <Link
+              key={inc.id}
+              href={`/incidents/${inc.id}`}
+              className="flex items-center justify-between text-sm text-orange-200 hover:underline"
+            >
+              <span className="flex items-center gap-2">
+                <StatusBadge status={inc.confidence} />
+                {inc.title} -- {inc.affected_device_count} device(s) affected
+              </span>
+              <span className="text-xs">View affected topology →</span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="card flex flex-wrap gap-3">
         <input
@@ -84,7 +107,12 @@ export default function NetworkMapPage() {
 
       {isLoading && <div className="text-gray-400">Loading topology...</div>}
       {!isLoading && graph && (
-        <TopologyCanvas nodes={filteredNodes} edges={filteredEdges} highlightId={searchMatch?.id} />
+        <TopologyCanvas
+          nodes={filteredNodes}
+          edges={filteredEdges}
+          highlightId={searchMatch?.id}
+          onNodeClick={(deviceId) => router.push(`/detective/${deviceId}`)}
+        />
       )}
       {!isLoading && graph && graph.nodes.length === 0 && (
         <div className="card text-gray-400">
