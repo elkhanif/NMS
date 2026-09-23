@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #0b0f17;
+  color: #e5e7eb;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #374151;
+  border-radius: 6px;
+}
+
+.card {
+  @apply rounded-lg border border-panelborder bg-panel p-4;
+}
+
+.table-base {
+  @apply w-full text-sm text-left;
+}
+.table-base thead th {
+  @apply sticky top-0 bg-panel border-b border-panelborder px-3 py-2 text-xs uppercase tracking-wide text-gray-400;
+}
+.table-base tbody td {
+  @apply px-3 py-2 border-b border-panelborder/60;
+}
+.table-base tbody tr:hover {
+  @apply bg-white/5;
+}
+
+.btn {
+  @apply inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.btn-primary {
+  @apply btn bg-blue-600 hover:bg-blue-500 text-white;
+}
+.btn-secondary {
+  @apply btn bg-gray-700 hover:bg-gray-600 text-white;
+}
+.btn-danger {
+  @apply btn bg-red-700 hover:bg-red-600 text-white;
+}
+
+.input {
+  @apply rounded-md bg-gray-900 border border-panelborder px-2 py-1.5 text-sm text-gray-100 focus:outline-none focus:ring-1 focus:ring-blue-500;
+}

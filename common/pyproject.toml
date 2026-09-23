@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nms-common"
+version = "0.1.0"
+description = "Shared models, config, and crypto for the Network Monitoring System API and worker"
+requires-python = ">=3.11"
+dependencies = [
+    "sqlalchemy>=2.0.30",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.1",
+    "cryptography>=42.0.0",
+    "passlib[bcrypt]>=1.7.4",
+]
+
+[tool.setuptools.packages.find]
+include = ["nms_common*"]
