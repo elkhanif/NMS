@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nms_common.models import Device, DeviceRelationship, User
+from nms_common.enums import EventSeverity, EventType
+from nms_common.models import Device, DeviceRelationship, Event, Interface, User
 
 from app.deps import get_current_user, get_db, require_config_writer
 from app.schemas.topology import RelationshipCreate, TopologyEdge, TopologyGraph, TopologyNode
@@ -33,9 +34,51 @@ async def create_relationship(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_config_writer),
 ) -> DeviceRelationship:
+    # Admin-triggered, so this is 100% accurate (no inference): if the child device
+    # already had a different parent/port on record, this new edge represents it
+    # moving -- surface that as a SWITCH_PORT_CHANGED event before adding the new one.
+    existing_result = await db.execute(
+        select(DeviceRelationship).where(DeviceRelationship.child_device_id == payload.child_device_id)
+    )
+    prior = next(
+        (
+            e
+            for e in existing_result.scalars().all()
+            if e.parent_device_id != payload.parent_device_id or e.child_interface_id != payload.child_interface_id
+        ),
+        None,
+    )
+
     edge = DeviceRelationship(**payload.model_dump())
     db.add(edge)
     await db.flush()
+
+    if prior is not None:
+        child_device, old_parent, new_parent = (
+            await db.get(Device, payload.child_device_id),
+            await db.get(Device, prior.parent_device_id),
+            await db.get(Device, payload.parent_device_id),
+        )
+        old_iface = await db.get(Interface, prior.child_interface_id) if prior.child_interface_id else None
+        new_iface = await db.get(Interface, payload.child_interface_id) if payload.child_interface_id else None
+        old_label = f"{old_parent.hostname if old_parent else 'Unknown'}/{old_iface.name if old_iface else 'Unknown'}"
+        new_label = f"{new_parent.hostname if new_parent else 'Unknown'}/{new_iface.name if new_iface else 'Unknown'}"
+        db.add(
+            Event(
+                device_id=payload.child_device_id,
+                event_type=EventType.SWITCH_PORT_CHANGED,
+                severity=EventSeverity.INFO,
+                message=f"{child_device.hostname if child_device else 'Device'} connection changed: "
+                f"{old_label} -> {new_label}",
+                event_metadata={
+                    "old_parent_device_id": str(prior.parent_device_id),
+                    "old_interface_id": str(prior.child_interface_id) if prior.child_interface_id else None,
+                    "new_parent_device_id": str(payload.parent_device_id),
+                    "new_interface_id": str(payload.child_interface_id) if payload.child_interface_id else None,
+                },
+            )
+        )
+
     await write_audit(db, current_user, "topology.relationship.create", "device_relationship", edge.id)
     await db.commit()
     return edge
