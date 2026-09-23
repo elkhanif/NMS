@@ -40,10 +40,14 @@ function formatTime(t: string) {
   return new Date(t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
+const AUTH_PROTOCOLS = ["SHA", "MD5", "SHA224", "SHA256", "SHA384", "SHA512"];
+const PRIV_PROTOCOLS = ["AES", "AES192", "AES256", "DES", "3DES"];
+
 export default function DeviceDetailPage() {
   const params = useParams<{ id: string }>();
   const deviceId = params.id;
   const { isConfigWriter } = useAuth();
+  const [credentialType, setCredentialType] = useState<"SNMPV2C" | "SNMPV3">("SNMPV2C");
 
   const { data: device, isLoading } = useDevice(deviceId);
   const { data: interfaces } = useDeviceInterfaces(deviceId);
@@ -310,29 +314,98 @@ export default function DeviceDetailPage() {
           </div>
 
           <form
-            className="flex flex-wrap items-end gap-3 border-t border-panelborder pt-3"
+            className="flex flex-col gap-3 border-t border-panelborder pt-3"
             onSubmit={(e) => {
               e.preventDefault();
               const form = new FormData(e.currentTarget);
-              setCredential.mutate({
-                credential_type: "SNMPV2C",
-                payload: { community: String(form.get("community") || "public") },
-              });
+              if (credentialType === "SNMPV3") {
+                setCredential.mutate({
+                  credential_type: "SNMPV3",
+                  payload: {
+                    username: String(form.get("username") || ""),
+                    auth_protocol: String(form.get("auth_protocol") || ""),
+                    auth_password: String(form.get("auth_password") || ""),
+                    priv_protocol: String(form.get("priv_protocol") || ""),
+                    priv_password: String(form.get("priv_password") || ""),
+                  },
+                });
+              } else {
+                setCredential.mutate({
+                  credential_type: "SNMPV2C",
+                  payload: { community: String(form.get("community") || "public") },
+                });
+              }
               e.currentTarget.reset();
             }}
           >
             <label className="flex flex-col gap-1 text-xs text-gray-400">
-              SNMPv2c community string
-              <input name="community" className="input" placeholder="public" type="password" />
+              SNMP credential type
+              <select
+                className="input w-40"
+                value={credentialType}
+                onChange={(e) => setCredentialType(e.target.value as "SNMPV2C" | "SNMPV3")}
+              >
+                <option value="SNMPV2C">SNMPv2c</option>
+                <option value="SNMPV3">SNMPv3</option>
+              </select>
             </label>
-            <button type="submit" className="btn-secondary" disabled={setCredential.isPending}>
-              Save credential
-            </button>
-            <span className="text-xs text-gray-500">
-              {credentials?.some((c) => c.credential_type === "SNMPV2C")
-                ? "SNMPv2c credential is configured (value hidden)."
-                : "No SNMP credential configured yet."}
-            </span>
+
+            {credentialType === "SNMPV2C" ? (
+              <label className="flex flex-col gap-1 text-xs text-gray-400">
+                Community string
+                <input name="community" className="input" placeholder="public" type="password" />
+              </label>
+            ) : (
+              <div className="flex flex-wrap items-end gap-3">
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  Username
+                  <input name="username" className="input" placeholder="admin" />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  Auth protocol
+                  <select name="auth_protocol" className="input" defaultValue="SHA">
+                    <option value="">None (noAuthNoPriv)</option>
+                    {AUTH_PROTOCOLS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  Auth password
+                  <input name="auth_password" className="input" type="password" />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  Priv protocol
+                  <select name="priv_protocol" className="input" defaultValue="AES">
+                    <option value="">None (authNoPriv)</option>
+                    {PRIV_PROTOCOLS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  Priv password
+                  <input name="priv_password" className="input" type="password" />
+                </label>
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button type="submit" className="btn-secondary" disabled={setCredential.isPending}>
+                Save credential
+              </button>
+              <span className="text-xs text-gray-500">
+                {credentials?.some((c) => c.credential_type === "SNMPV3")
+                  ? "SNMPv3 credential is configured (value hidden, takes priority over SNMPv2c)."
+                  : credentials?.some((c) => c.credential_type === "SNMPV2C")
+                    ? "SNMPv2c credential is configured (value hidden)."
+                    : "No SNMP credential configured yet."}
+              </span>
+            </div>
           </form>
         </div>
       )}

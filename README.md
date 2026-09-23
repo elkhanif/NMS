@@ -111,11 +111,23 @@ docker-compose.dev.yml  adds mock-snmp / mock-targets under the `dev` profile
 
 ## SNMPv3
 
-Only SNMPv2c is implemented, per spec. The credential model
-(`nms_common.enums.CredentialType.SNMPV3`) and the worker's `build auth data` seam in
-`worker/worker/pollers/snmp.py` already leave room for it — adding it means branching
-on `credential_type` there to build `UsmUserData` instead of `CommunityData`, nothing
-else in the pipeline changes.
+Both SNMPv2c and SNMPv3 (USM: auth SHA/MD5/SHA224/256/384/512, priv DES/3DES/AES) are
+supported. `worker/worker/pollers/snmp.py:build_auth_data()` branches on
+`credential_type` to build a `CommunityData` or `UsmUserData` object; the scheduler and
+discovery worker try an `SNMPV3` credential first, falling back to `SNMPV2C`. Store an
+SNMPv3 credential via `POST /devices/{id}/credentials` with
+`{"credential_type": "SNMPV3", "payload": {"username": ..., "auth_protocol": "SHA",
+"auth_password": ..., "priv_protocol": "AES", "priv_password": ...}}` (omit
+`priv_protocol`/`priv_password` for authNoPriv, and `auth_protocol`/`auth_password` too
+for noAuthNoPriv).
+
+Verified end-to-end (engine discovery + authPriv GET) against a real net-snmp `snmpd`
+agent. The bundled `mock-snmp` dev fixture (`docker-compose.dev.yml`) is **not** a
+reliable SNMPv3 test target: it runs the deprecated `pysnmp-lextudio`/`pysnmpcrypto`
+fork, whose AES/auth-key implementation doesn't interoperate with the actively
+maintained `pysnmp` package this app uses -- authPriv requests against it silently time
+out with no wire-level indication of why. Test SNMPv3 against a real device or a
+net-snmp `snmpd` instead.
 
 ## Running tests
 

@@ -1,15 +1,10 @@
-"""SNMPv2c polling via pysnmp's asyncio hlapi (pysnmp>=6.2).
+"""SNMPv2c and SNMPv3 polling via pysnmp's asyncio hlapi (pysnmp>=6.2).
 
 NOTE: pysnmp's async API has moved around across major versions. If SNMP polling
 raises AttributeError/ImportError at startup, this is the first file to check against
 whatever `pysnmp` version actually resolved in the container -- everything else in the
 worker only depends on the plain-dict return shape of `poll_snmp_device`, so a version
 fixup is isolated to this module.
-
-Architecture note: only SNMPv2c (community string) is implemented, per spec. SNMPv3
-support can be added by branching on DeviceCredential.credential_type == SNMPV3 in
-`build_auth_data()` below and constructing `UsmUserData` instead of `CommunityData` --
-nothing else in the polling/collection pipeline needs to change.
 """
 
 from pysnmp.hlapi.v3arch.asyncio import (
@@ -19,9 +14,70 @@ from pysnmp.hlapi.v3arch.asyncio import (
     ObjectType,
     SnmpEngine,
     UdpTransportTarget,
+    UsmUserData,
     bulk_cmd,
     get_cmd,
+    usm3DESEDEPrivProtocol,
+    usmAesCfb128Protocol,
+    usmAesCfb192Protocol,
+    usmAesCfb256Protocol,
+    usmDESPrivProtocol,
+    usmHMAC128SHA224AuthProtocol,
+    usmHMAC192SHA256AuthProtocol,
+    usmHMAC256SHA384AuthProtocol,
+    usmHMAC384SHA512AuthProtocol,
+    usmHMACMD5AuthProtocol,
+    usmHMACSHAAuthProtocol,
 )
+
+from nms_common.enums import CredentialType
+
+AUTH_PROTOCOLS = {
+    "MD5": usmHMACMD5AuthProtocol,
+    "SHA": usmHMACSHAAuthProtocol,
+    "SHA1": usmHMACSHAAuthProtocol,
+    "SHA224": usmHMAC128SHA224AuthProtocol,
+    "SHA256": usmHMAC192SHA256AuthProtocol,
+    "SHA384": usmHMAC256SHA384AuthProtocol,
+    "SHA512": usmHMAC384SHA512AuthProtocol,
+}
+
+PRIV_PROTOCOLS = {
+    "DES": usmDESPrivProtocol,
+    "3DES": usm3DESEDEPrivProtocol,
+    "AES": usmAesCfb128Protocol,
+    "AES128": usmAesCfb128Protocol,
+    "AES192": usmAesCfb192Protocol,
+    "AES256": usmAesCfb256Protocol,
+}
+
+
+def build_auth_data(credential_type: CredentialType, payload: dict):
+    """Builds the pysnmp auth object for a poll/probe from a decrypted credential
+    payload.
+
+    SNMPv2c payload: {"community": str}.
+    SNMPv3 payload: {"username": str, "auth_protocol": str | None,
+    "auth_password": str | None, "priv_protocol": str | None, "priv_password": str | None}
+    -- security level (noAuthNoPriv/authNoPriv/authPriv) follows from which of those
+    are present, same as any USM implementation, so nothing else needs to track it.
+    """
+    if credential_type == CredentialType.SNMPV3:
+        kwargs = {}
+        auth_protocol = AUTH_PROTOCOLS.get((payload.get("auth_protocol") or "").upper())
+        if auth_protocol is not None:
+            kwargs["authProtocol"] = auth_protocol
+        priv_protocol = PRIV_PROTOCOLS.get((payload.get("priv_protocol") or "").upper())
+        if priv_protocol is not None:
+            kwargs["privProtocol"] = priv_protocol
+        return UsmUserData(
+            payload["username"],
+            authKey=payload.get("auth_password") or None,
+            privKey=payload.get("priv_password") or None,
+            **kwargs,
+        )
+    return CommunityData(payload.get("community", "public"), mpModel=1)
+
 
 # Standard MIB-II / HOST-RESOURCES-MIB OIDs
 OID_SYS_DESCR = "1.3.6.1.2.1.1.1.0"
@@ -57,10 +113,9 @@ async def _build_transport(ip: str, port: int, timeout: float, retries: int) -> 
         return UdpTransportTarget((ip, port), timeout=timeout, retries=retries)
 
 
-async def snmp_get(ip: str, community: str, oids: list[str], port: int = 161, timeout: float = 5.0) -> dict:
+async def snmp_get(ip: str, auth, oids: list[str], port: int = 161, timeout: float = 5.0) -> dict:
     engine = SnmpEngine()
     transport = await _build_transport(ip, port, timeout, retries=1)
-    auth = CommunityData(community, mpModel=1)  # mpModel=1 -> SNMPv2c
 
     error_indication, error_status, _error_index, var_binds = await get_cmd(
         engine, auth, transport, ContextData(), *(ObjectType(ObjectIdentity(oid)) for oid in oids)
@@ -71,12 +126,11 @@ async def snmp_get(ip: str, community: str, oids: list[str], port: int = 161, ti
     return {str(name): value for name, value in var_binds}
 
 
-async def snmp_walk(ip: str, community: str, base_oid: str, port: int = 161, timeout: float = 5.0) -> dict:
+async def snmp_walk(ip: str, auth, base_oid: str, port: int = 161, timeout: float = 5.0) -> dict:
     """Walks a subtree using repeated GETNEXT (simpler/more portable across pysnmp
     versions than paginated GETBULK); fine for IF-MIB-sized tables on office/home gear."""
     engine = SnmpEngine()
     transport = await _build_transport(ip, port, timeout, retries=1)
-    auth = CommunityData(community, mpModel=1)
 
     results: dict[str, object] = {}
     current_oid = base_oid
@@ -105,13 +159,13 @@ def _last_index(oid: str) -> str:
     return oid.rsplit(".", 1)[-1]
 
 
-async def poll_snmp_device(ip: str, community: str, port: int = 161, timeout: float = 5.0) -> dict:
+async def poll_snmp_device(ip: str, auth, port: int = 161, timeout: float = 5.0) -> dict:
     """Returns sys info, CPU/memory/disk (best-effort, agent-dependent), and interfaces."""
-    sys_info = await snmp_get(ip, community, [OID_SYS_DESCR, OID_SYS_UPTIME], port, timeout)
+    sys_info = await snmp_get(ip, auth, [OID_SYS_DESCR, OID_SYS_UPTIME], port, timeout)
 
     cpu_percent = None
     try:
-        cpu_table = await snmp_walk(ip, community, OID_HR_PROCESSOR_LOAD, port, timeout)
+        cpu_table = await snmp_walk(ip, auth, OID_HR_PROCESSOR_LOAD, port, timeout)
         loads = [float(v) for v in cpu_table.values()]
         if loads:
             cpu_percent = sum(loads) / len(loads)
@@ -121,9 +175,9 @@ async def poll_snmp_device(ip: str, community: str, port: int = 161, timeout: fl
     memory_percent = None
     disk_percent = None
     try:
-        descr_table = await snmp_walk(ip, community, OID_HR_STORAGE_DESCR, port, timeout)
-        size_table = await snmp_walk(ip, community, OID_HR_STORAGE_SIZE, port, timeout)
-        used_table = await snmp_walk(ip, community, OID_HR_STORAGE_USED, port, timeout)
+        descr_table = await snmp_walk(ip, auth, OID_HR_STORAGE_DESCR, port, timeout)
+        size_table = await snmp_walk(ip, auth, OID_HR_STORAGE_SIZE, port, timeout)
+        used_table = await snmp_walk(ip, auth, OID_HR_STORAGE_USED, port, timeout)
 
         for oid, descr in descr_table.items():
             idx = _last_index(oid)
@@ -157,17 +211,17 @@ async def poll_snmp_device(ip: str, community: str, port: int = 161, timeout: fl
             (OID_IF_IN_DISCARDS, "discards_in"),
             (OID_IF_OUT_DISCARDS, "discards_out"),
         ]:
-            table = await snmp_walk(ip, community, table_oid, port, timeout)
+            table = await snmp_walk(ip, auth, table_oid, port, timeout)
             for oid, value in table.items():
                 if_index = _last_index(oid)
                 interfaces.setdefault(if_index, {"if_index": int(if_index)})[key] = value
 
         for if_index, iface in interfaces.items():
             if "in_octets" not in iface:
-                fallback = await snmp_walk(ip, community, OID_IF_IN_OCTETS, port, timeout)
+                fallback = await snmp_walk(ip, auth, OID_IF_IN_OCTETS, port, timeout)
                 iface["in_octets"] = fallback.get(f"{OID_IF_IN_OCTETS}.{if_index}")
             if "out_octets" not in iface:
-                fallback = await snmp_walk(ip, community, OID_IF_OUT_OCTETS, port, timeout)
+                fallback = await snmp_walk(ip, auth, OID_IF_OUT_OCTETS, port, timeout)
                 iface["out_octets"] = fallback.get(f"{OID_IF_OUT_OCTETS}.{if_index}")
             if "admin_status" in iface:
                 iface["admin_status"] = INTERFACE_STATUS_MAP.get(int(iface["admin_status"]), "UNKNOWN")

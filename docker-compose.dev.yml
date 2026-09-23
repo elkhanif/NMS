@@ -2,7 +2,7 @@ services:
   mock-snmp:
     build:
       context: ./mock-devices
-    command: ["snmpsim-command-responder", "--data-dir=/app/snmp-data", "--agent-udpv4-endpoint=0.0.0.0:161"]
+    command: ["snmpsim-command-responder", "--data-dir=/app/snmp-data", "--agent-udpv4-endpoint=0.0.0.0:161", "--process-user=nobody", "--process-group=nogroup"]
     profiles: ["dev"]
 
   mock-targets:

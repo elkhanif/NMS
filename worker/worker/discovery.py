@@ -13,7 +13,7 @@ from nms_common.models import DeviceCredential, DiscoveryJob, DiscoveryResult
 
 from worker.credentials import decrypt_credential
 from worker.pollers.icmp import poll_icmp
-from worker.pollers.snmp import poll_snmp_device
+from worker.pollers.snmp import build_auth_data, poll_snmp_device
 from worker.pollers.tcp import poll_tcp
 
 logger = logging.getLogger("worker.discovery")
@@ -63,7 +63,7 @@ async def _pick_up_pending_job() -> None:
                 await db.commit()
 
 
-async def _probe_host(ip: str, credential_payload: dict | None) -> dict | None:
+async def _probe_host(ip: str, credential_type: CredentialType | None, credential_payload: dict | None) -> dict | None:
     icmp_result = await poll_icmp(ip, timeout=1.0, count=1)
     open_ports: list[int] = []
     for port in COMMON_PORTS:
@@ -76,9 +76,10 @@ async def _probe_host(ip: str, credential_payload: dict | None) -> dict | None:
 
     snmp_reachable = False
     sys_descr = ""
-    if 161 in open_ports and credential_payload:
+    if 161 in open_ports and credential_payload and credential_type is not None:
         try:
-            snmp_data = await poll_snmp_device(ip, credential_payload.get("community", "public"), timeout=1.5)
+            auth = build_auth_data(credential_type, credential_payload)
+            snmp_data = await poll_snmp_device(ip, auth, timeout=1.5)
             sys_descr = (snmp_data.get("sys_descr") or "").lower()
             snmp_reachable = bool(sys_descr)
         except Exception:
@@ -116,10 +117,15 @@ async def _execute_job(job_id: uuid.UUID) -> None:
         job.total_hosts = len(hosts)
 
         credential_payload = None
+        credential_type = None
         if job.credential_ref_id:
             credential = await db.get(DeviceCredential, job.credential_ref_id)
-            if credential is not None and credential.credential_type == CredentialType.SNMPV2C:
+            if credential is not None and credential.credential_type in (
+                CredentialType.SNMPV2C,
+                CredentialType.SNMPV3,
+            ):
                 credential_payload = decrypt_credential(credential)
+                credential_type = credential.credential_type
 
         rate_limit_pps = max(1, job.rate_limit_pps)
         await db.commit()
@@ -128,7 +134,7 @@ async def _execute_job(job_id: uuid.UUID) -> None:
 
     async def bounded_probe(ip):
         async with semaphore:
-            return await _probe_host(str(ip), credential_payload)
+            return await _probe_host(str(ip), credential_type, credential_payload)
 
     tasks = []
     for host in hosts:

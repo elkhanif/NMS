@@ -15,7 +15,7 @@ from worker import alert_engine, collectors
 from worker.credentials import decrypt_credential
 from worker.pollers.http import poll_http
 from worker.pollers.icmp import poll_icmp
-from worker.pollers.snmp import poll_snmp_device
+from worker.pollers.snmp import build_auth_data, poll_snmp_device
 from worker.pollers.tcp import poll_tcp
 
 logger = logging.getLogger("worker.scheduler")
@@ -117,13 +117,15 @@ class Scheduler:
             return await poll_http(url, timeout=check.timeout_seconds, expected_status=check.config.get("expected_status", 200))
 
         if check.check_type == CheckType.SNMP:
-            credential = await self._get_credential(db, device.id, CredentialType.SNMPV2C)
+            credential = await self._get_credential(db, device.id, CredentialType.SNMPV3)
             if credential is None:
-                return {"reachable": False, "error": "no SNMPv2c credential configured"}
+                credential = await self._get_credential(db, device.id, CredentialType.SNMPV2C)
+            if credential is None:
+                return {"reachable": False, "error": "no SNMP credential configured"}
             payload = decrypt_credential(credential)
-            community = payload.get("community", "public")
+            auth = build_auth_data(credential.credential_type, payload)
             port = int(check.config.get("port", 161))
-            data = await poll_snmp_device(device.ip_address, community, port=port, timeout=check.timeout_seconds)
+            data = await poll_snmp_device(device.ip_address, auth, port=port, timeout=check.timeout_seconds)
             data["reachable"] = bool(data.get("sys_descr")) or bool(data.get("interfaces"))
             return data
 
