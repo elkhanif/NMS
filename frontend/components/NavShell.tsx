@@ -16,8 +16,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard" },
+  { href: "/whats-happening", label: "What's Happening" },
   { href: "/devices", label: "Devices" },
   { href: "/network-map", label: "Network Map" },
+  { href: "/detective", label: "Detective" },
+  { href: "/incidents", label: "Incidents" },
   { href: "/alerts", label: "Alerts" },
   { href: "/events", label: "Events" },
   { href: "/discovery", label: "Discovery" },

@@ -13,13 +13,18 @@ import type {
   DashboardFilters,
   DashboardSummary,
   Device,
+  DeviceAddress,
   DeviceCheck,
   DeviceCredentialMeta,
   DeviceDetail,
+  DeviceInvestigation,
   DeviceStatusDistribution,
+  DetectiveSearchResult,
   DiscoveryJob,
   DiscoveryResult,
   EventRow,
+  Incident,
+  IncidentDetail,
   InterfaceMetricPoint,
   InterfaceRow,
   Location,
@@ -306,7 +311,9 @@ export function useDeleteAlertRule() {
 
 // ---------- Events ----------
 
-export function useEvents(filters: { device_id?: string; event_type?: string; severity?: string } = {}) {
+export function useEvents(
+  filters: { device_id?: string; event_type?: string; severity?: string; category?: "change" } = {}
+) {
   return useQuery({
     queryKey: ["events", filters],
     queryFn: () => apiFetch<EventRow[]>(`events/${qs(filters)}`),
@@ -409,6 +416,64 @@ export function useUpdateUser() {
     mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) =>
       apiFetch<User>(`users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+
+// ---------- Network Detective ----------
+
+export function useDetectiveSearch(q: string) {
+  return useQuery({
+    queryKey: ["detective-search", q],
+    queryFn: () => apiFetch<DetectiveSearchResult>(`detective/search${qs({ q })}`),
+    enabled: q.trim().length > 0,
+  });
+}
+
+export function useDeviceInvestigation(deviceId: string) {
+  return useQuery({
+    queryKey: ["detective", deviceId],
+    queryFn: () => apiFetch<DeviceInvestigation>(`detective/${deviceId}`),
+    enabled: Boolean(deviceId),
+    refetchInterval: LIVE_REFETCH_MS,
+  });
+}
+
+export function useDeviceAddresses(deviceId: string) {
+  return useQuery({
+    queryKey: ["device-addresses", deviceId],
+    queryFn: () => apiFetch<DeviceAddress[]>(`devices/${deviceId}/addresses`),
+    enabled: Boolean(deviceId),
+  });
+}
+
+// ---------- Incidents ----------
+
+export function useIncidents(filters: { status?: string; confidence?: string; device_id?: string } = {}) {
+  return useQuery({
+    queryKey: ["incidents", filters],
+    queryFn: () => apiFetch<Incident[]>(`incidents/${qs(filters)}`),
+    refetchInterval: LIVE_REFETCH_MS,
+  });
+}
+
+export function useIncident(incidentId: string) {
+  return useQuery({
+    queryKey: ["incident", incidentId],
+    queryFn: () => apiFetch<IncidentDetail>(`incidents/${incidentId}`),
+    enabled: Boolean(incidentId),
+    refetchInterval: LIVE_REFETCH_MS,
+  });
+}
+
+export function useUpdateIncident(incidentId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { confidence?: string; status?: string; suspected_device_id?: string }) =>
+      apiFetch<Incident>(`incidents/${incidentId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["incidents"] });
+      qc.invalidateQueries({ queryKey: ["incident", incidentId] });
+    },
   });
 }
 

@@ -14,6 +14,9 @@ const STATUS_STYLES: Record<string, string> = {
   COMPLETED: "bg-status-up/20 text-status-up border-status-up/40",
   FAILED: "bg-status-critical/20 text-status-critical border-status-critical/40",
   INFO: "bg-blue-500/20 text-blue-400 border-blue-500/40",
+  POSSIBLE: "bg-status-warning/20 text-status-warning border-status-warning/40",
+  SUSPECTED: "bg-orange-500/20 text-orange-400 border-orange-500/40",
+  CONFIRMED: "bg-status-critical/20 text-status-critical border-status-critical/40",
 };
 
 export function StatusBadge({ status }: { status: string }) {

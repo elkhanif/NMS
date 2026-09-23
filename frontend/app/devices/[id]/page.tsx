@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -73,7 +74,12 @@ export default function DeviceDetailPage() {
           <h1 className="text-xl font-semibold text-gray-100">{device.hostname}</h1>
           <p className="text-sm text-gray-500 font-mono">{device.ip_address}</p>
         </div>
-        <StatusBadge status={device.status} />
+        <div className="flex items-center gap-3">
+          <Link href={`/detective/${deviceId}`} className="btn-secondary">
+            Investigate
+          </Link>
+          <StatusBadge status={device.status} />
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">

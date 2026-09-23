@@ -42,9 +42,20 @@ export type EventType =
   | "CONFIG_CHANGED"
   | "ALERT_ACKNOWLEDGED"
   | "ALERT_RESOLVED"
-  | "DISCOVERY_COMPLETED";
+  | "DISCOVERY_COMPLETED"
+  | "DEVICE_NEW"
+  | "DEVICE_MISSING"
+  | "IP_CHANGED"
+  | "MAC_CHANGED"
+  | "SWITCH_PORT_CHANGED"
+  | "VLAN_CHANGED"
+  | "GATEWAY_CHANGED"
+  | "AP_ASSOCIATION_CHANGED";
 export type EventSeverity = "INFO" | "WARNING" | "CRITICAL";
 export type DiscoveryJobStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
+export type IncidentStatus = "OPEN" | "RESOLVED";
+export type IncidentConfidence = "POSSIBLE" | "SUSPECTED" | "CONFIRMED";
+export type AddressSource = "MANUAL" | "DISCOVERY" | "POLL_OBSERVED";
 
 export interface User {
   id: string;
@@ -79,6 +90,8 @@ export interface Device {
   last_seen: string | null;
   created_at: string;
   has_snmp_credential: boolean;
+  serial_number: string | null;
+  default_gateway_ip: string | null;
 }
 
 export interface DeviceCheck {
@@ -268,4 +281,122 @@ export interface DashboardFilters {
   device_type?: DeviceType;
   vendor?: string;
   status?: DeviceStatus;
+}
+
+export interface DeviceAddress {
+  id: string;
+  ip_address: string;
+  mac_address: string | null;
+  source: AddressSource;
+  is_current: boolean;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export interface Incident {
+  id: string;
+  sequence_number: number;
+  suspected_device_id: string | null;
+  status: IncidentStatus;
+  confidence: IncidentConfidence;
+  title: string;
+  started_at: string;
+  detected_at: string;
+  resolved_at: string | null;
+  affected_device_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface IncidentDetail extends Incident {
+  suspected_device: Device | null;
+  affected_devices: Device[];
+  related_events: EventRow[];
+  duration_seconds: number | null;
+  topology: TopologyGraph;
+}
+
+export interface DetectiveMatch {
+  device_id: string;
+  hostname: string;
+  ip_address: string;
+  match_type: "device_id" | "ip" | "hostname" | "mac" | "serial_number" | "ip_history" | "mac_history";
+  matched_value: string;
+}
+
+export interface DetectiveSearchResult {
+  query: string;
+  matches: DetectiveMatch[];
+}
+
+export interface DeviceIdentity {
+  hostname: string;
+  ip_address: string;
+  mac_address: string | null;
+  vendor: string | null;
+  model: string | null;
+  device_type: DeviceType;
+  os: string | null;
+  status: DeviceStatus;
+  first_seen: string | null;
+  last_seen: string | null;
+  serial_number: string | null;
+}
+
+export interface NetworkIdentity {
+  gateway: string | null;
+  vlan: string | null;
+  subnet: string | null;
+  switch_hostname: string | null;
+  switch_port: string | null;
+  access_point: string | null;
+  parent_device_id: string | null;
+  connected_device_ids: string[];
+}
+
+export interface HealthSnapshot {
+  availability_pct: number | null;
+  latency_ms: number | null;
+  packet_loss_pct: number | null;
+  cpu_percent: number | null;
+  memory_percent: number | null;
+  interfaces: InterfaceRow[];
+  traffic_in_bps: number | null;
+  traffic_out_bps: number | null;
+}
+
+export interface TimelineEntry {
+  time: string;
+  event_type: string;
+  message: string;
+  severity: string;
+}
+
+export interface RelationshipNode {
+  device_id: string;
+  hostname: string;
+  status: DeviceStatus;
+  relationship_type: RelationshipType | null;
+  interface_name: string | null;
+}
+
+export interface InvestigationSummary {
+  current_status: DeviceStatus;
+  last_outage_start: string | null;
+  last_outage_end: string | null;
+  avg_latency_ms: number | null;
+  packet_loss_pct: number | null;
+  ip_changes_24h: number;
+  mac_changes_24h: number;
+  connected_through: string | null;
+}
+
+export interface DeviceInvestigation {
+  identity: DeviceIdentity;
+  network_identity: NetworkIdentity;
+  health: HealthSnapshot;
+  timeline: TimelineEntry[];
+  ancestors: RelationshipNode[];
+  children: RelationshipNode[];
+  summary: InvestigationSummary;
 }
