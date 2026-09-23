@@ -101,6 +101,8 @@ async def import_discovery_results(
     if not results:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No matching discovery results")
 
+    overrides_by_result = {o.result_id: o for o in payload.overrides}
+
     imported = []
     for r in results:
         if r.imported:
@@ -109,13 +111,16 @@ async def import_discovery_results(
         if existing.scalar_one_or_none() is not None:
             continue
 
+        override = overrides_by_result.get(r.id)
         device = Device(
-            hostname=r.hostname_guess or r.ip_address,
+            hostname=(override.hostname if override else None) or r.hostname_guess or r.ip_address,
             ip_address=r.ip_address,
             mac_address=r.mac_address,
-            device_type=r.suggested_device_type or DeviceCreate.model_fields["device_type"].default,
-            location_id=payload.location_id,
-            department=payload.department,
+            device_type=(override.device_type if override else None)
+            or r.suggested_device_type
+            or DeviceCreate.model_fields["device_type"].default,
+            location_id=(override.location_id if override else None) or payload.location_id,
+            department=(override.department if override else None) or payload.department,
         )
         db.add(device)
         await db.flush()

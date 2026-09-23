@@ -330,11 +330,23 @@ export function useStartDiscovery() {
   });
 }
 
+export interface DiscoveryResultOverride {
+  result_id: string;
+  hostname?: string;
+  device_type?: string;
+  department?: string;
+  location_id?: string;
+}
+
 export function useImportDiscoveryResults(jobId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { result_ids: string[]; location_id?: string; department?: string }) =>
-      apiFetch<DiscoveryResult[]>(`discovery/${jobId}/import`, { method: "POST", body: JSON.stringify(payload) }),
+    mutationFn: (payload: {
+      result_ids: string[];
+      location_id?: string;
+      department?: string;
+      overrides?: DiscoveryResultOverride[];
+    }) => apiFetch<DiscoveryResult[]>(`discovery/${jobId}/import`, { method: "POST", body: JSON.stringify(payload) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["discovery-results", jobId] });
       qc.invalidateQueries({ queryKey: ["devices"] });

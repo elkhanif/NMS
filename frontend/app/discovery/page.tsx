@@ -10,6 +10,20 @@ import {
   useStartDiscovery,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import type { DeviceType } from "@/lib/types";
+
+const DEVICE_TYPES: DeviceType[] = [
+  "ROUTER",
+  "FIREWALL",
+  "SWITCH",
+  "ACCESS_POINT",
+  "SERVER",
+  "VM",
+  "PRINTER",
+  "CCTV_NVR",
+  "IOT_DEVICE",
+  "GENERIC",
+];
 
 export default function DiscoveryPage() {
   const { isConfigWriter } = useAuth();
@@ -95,20 +109,28 @@ export default function DiscoveryPage() {
       </div>
 
       {selectedJob && (
-        <div className="card overflow-x-auto">
+        <form
+          className="card overflow-x-auto"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            const resultIds = Array.from(selectedResults);
+            const overrides = resultIds.map((id) => ({
+              result_id: id,
+              hostname: String(form.get(`hostname_${id}`) || "") || undefined,
+              device_type: String(form.get(`device_type_${id}`) || "") || undefined,
+              department: String(form.get(`department_${id}`) || "") || undefined,
+            }));
+            importResults.mutate(
+              { result_ids: resultIds, overrides },
+              { onSuccess: () => setSelectedResults(new Set()) }
+            );
+          }}
+        >
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-sm font-medium text-gray-300">Results</h3>
             {isConfigWriter && (
-              <button
-                className="btn-primary"
-                disabled={!selectedResults.size || importResults.isPending}
-                onClick={() =>
-                  importResults.mutate(
-                    { result_ids: Array.from(selectedResults) },
-                    { onSuccess: () => setSelectedResults(new Set()) }
-                  )
-                }
-              >
+              <button type="submit" className="btn-primary" disabled={!selectedResults.size || importResults.isPending}>
                 Import selected ({selectedResults.size})
               </button>
             )}
@@ -116,49 +138,106 @@ export default function DiscoveryPage() {
           <table className="table-base">
             <thead>
               <tr>
-                <th></th>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={
+                      !!results?.length &&
+                      results.filter((r) => !r.imported).every((r) => selectedResults.has(r.id))
+                    }
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedResults(new Set(results?.filter((r) => !r.imported).map((r) => r.id)));
+                      } else {
+                        setSelectedResults(new Set());
+                      }
+                    }}
+                  />
+                </th>
                 <th>IP</th>
+                <th>Hostname</th>
                 <th>Open ports</th>
                 <th>SNMP</th>
-                <th>Suggested type</th>
+                <th>Device type</th>
+                <th>Department</th>
                 <th>Imported</th>
               </tr>
             </thead>
             <tbody>
-              {results?.map((r) => (
-                <tr key={r.id}>
-                  <td>
-                    <input
-                      type="checkbox"
-                      disabled={r.imported}
-                      checked={selectedResults.has(r.id)}
-                      onChange={(e) => {
-                        setSelectedResults((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(r.id);
-                          else next.delete(r.id);
-                          return next;
-                        });
-                      }}
-                    />
-                  </td>
-                  <td className="font-mono text-xs">{r.ip_address}</td>
-                  <td className="text-xs">{r.open_ports.join(", ") || "-"}</td>
-                  <td>{r.snmp_reachable ? "yes" : "no"}</td>
-                  <td>{r.suggested_device_type || "-"}</td>
-                  <td>{r.imported ? "yes" : "no"}</td>
-                </tr>
-              ))}
+              {results?.map((r) => {
+                const selected = selectedResults.has(r.id);
+                return (
+                  <tr key={r.id}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        disabled={r.imported}
+                        checked={selected}
+                        onChange={(e) => {
+                          setSelectedResults((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(r.id);
+                            else next.delete(r.id);
+                            return next;
+                          });
+                        }}
+                      />
+                    </td>
+                    <td className="font-mono text-xs">{r.ip_address}</td>
+                    <td>
+                      {r.imported ? (
+                        r.hostname_guess || "-"
+                      ) : (
+                        <input
+                          name={`hostname_${r.id}`}
+                          className="input"
+                          defaultValue={r.hostname_guess || ""}
+                          placeholder={r.ip_address}
+                          disabled={!selected}
+                        />
+                      )}
+                    </td>
+                    <td className="text-xs">{r.open_ports.join(", ") || "-"}</td>
+                    <td>{r.snmp_reachable ? "yes" : "no"}</td>
+                    <td>
+                      {r.imported ? (
+                        r.suggested_device_type || "-"
+                      ) : (
+                        <select
+                          name={`device_type_${r.id}`}
+                          className="input"
+                          defaultValue={r.suggested_device_type || "GENERIC"}
+                          disabled={!selected}
+                        >
+                          {DEVICE_TYPES.map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </td>
+                    <td>
+                      {r.imported ? (
+                        "-"
+                      ) : (
+                        <input name={`department_${r.id}`} className="input" disabled={!selected} />
+                      )}
+                    </td>
+                    <td>{r.imported ? "yes" : "no"}</td>
+                  </tr>
+                );
+              })}
               {!results?.length && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-gray-500">
+                  <td colSpan={8} className="py-6 text-center text-gray-500">
                     No results yet -- job may still be running.
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
-        </div>
+        </form>
       )}
     </div>
   );

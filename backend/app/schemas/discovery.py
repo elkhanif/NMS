@@ -55,7 +55,18 @@ class DiscoveryResultOut(ORMModel):
     device_id: uuid.UUID | None
 
 
+class DiscoveryResultOverride(BaseModel):
+    """Per-result adjustments applied on top of the discovery guess/import defaults."""
+
+    result_id: uuid.UUID
+    hostname: str | None = None
+    device_type: DeviceType | None = None
+    department: str | None = None
+    location_id: uuid.UUID | None = None
+
+
 class DiscoveryImportRequest(BaseModel):
     result_ids: list[uuid.UUID]
     location_id: uuid.UUID | None = None
     department: str | None = None
+    overrides: list[DiscoveryResultOverride] = []
