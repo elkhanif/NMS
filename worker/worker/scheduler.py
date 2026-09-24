@@ -10,6 +10,7 @@ from nms_common.config import get_settings
 from nms_common.db import new_session
 from nms_common.enums import CheckType, CredentialType, MetricType
 from nms_common.models import Device, DeviceCheck, DeviceCredential
+from nms_common.ws_events import publish_pending
 
 from worker import alert_engine, collectors
 from worker.credentials import decrypt_credential
@@ -78,6 +79,7 @@ class Scheduler:
                     interval = check.interval_seconds
                     await self._poll_once(db, device, check)
                     await db.commit()
+                    await publish_pending(db)
             except asyncio.CancelledError:
                 raise
             except Exception:

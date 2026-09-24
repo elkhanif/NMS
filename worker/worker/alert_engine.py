@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from nms_common.enums import AlertOperator, AlertScope, AlertStatus, MetricType, RuleKind
 from nms_common.models import Alert, AlertRule, Device
+from nms_common.ws_events import queue_event
 
 from worker import state
 
@@ -62,20 +63,21 @@ async def _open_or_update_alert(
     if existing is not None:
         existing.current_value = value
         return
-    db.add(
-        Alert(
-            device_id=device.id,
-            interface_id=interface_id,
-            alert_rule_id=rule.id,
-            severity=rule.severity,
-            metric=metric_label,
-            threshold=rule.threshold,
-            current_value=value,
-            message=message,
-            status=AlertStatus.OPEN,
-            opened_at=datetime.now(timezone.utc),
-        )
+    alert = Alert(
+        device_id=device.id,
+        interface_id=interface_id,
+        alert_rule_id=rule.id,
+        severity=rule.severity,
+        metric=metric_label,
+        threshold=rule.threshold,
+        current_value=value,
+        message=message,
+        status=AlertStatus.OPEN,
+        opened_at=datetime.now(timezone.utc),
     )
+    db.add(alert)
+    await db.flush()
+    queue_event(db, "alert", "opened", id=alert.id, device_id=device.id, severity=rule.severity.value)
 
 
 async def _auto_resolve(
@@ -85,6 +87,7 @@ async def _auto_resolve(
     if alert is not None:
         alert.status = AlertStatus.RESOLVED
         alert.resolved_at = datetime.now(timezone.utc)
+        queue_event(db, "alert", "resolved", id=alert.id, device_id=device_id, severity=alert.severity.value)
 
 
 async def evaluate_metric_rules(db: AsyncSession, device: Device, metric_type: MetricType, value: float) -> None:

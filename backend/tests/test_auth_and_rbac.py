@@ -4,7 +4,7 @@ from nms_common.models import User
 
 
 async def test_login_requires_valid_password(client, admin_user):
-    resp = await client.post("/api/v1/auth/login", json={"email": "admin@test.local", "password": "wrong"})
+    resp = await client.post("/api/v1/auth/login", json={"email": "admin@test.com", "password": "wrong"})
     assert resp.status_code == 401
 
 
@@ -27,13 +27,13 @@ async def test_admin_can_create_and_fetch_device(client, admin_token):
 
 async def test_viewer_cannot_create_device(client, db_session):
     viewer = User(
-        email="viewer@test.local", hashed_password=hash_password("viewerpass123"), role=UserRole.VIEWER, is_active=True
+        email="viewer@test.com", hashed_password=hash_password("viewerpass123"), role=UserRole.VIEWER, is_active=True
     )
     db_session.add(viewer)
     await db_session.commit()
 
     login = await client.post(
-        "/api/v1/auth/login", json={"email": "viewer@test.local", "password": "viewerpass123"}
+        "/api/v1/auth/login", json={"email": "viewer@test.com", "password": "viewerpass123"}
     )
     headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 

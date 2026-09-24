@@ -14,6 +14,7 @@ from app.api.routes import (
     locations,
     topology,
     users,
+    ws,
 )
 
 api_router = APIRouter(prefix="/api/v1")
@@ -30,3 +31,4 @@ api_router.include_router(topology.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(incidents.router)
 api_router.include_router(detective.router)
+api_router.include_router(ws.router)

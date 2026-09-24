@@ -30,6 +30,7 @@ from nms_common.enums import (
     IncidentStatus,
 )
 from nms_common.models import Device, DeviceCheck, DeviceRelationship, Event, Incident, IncidentEvent
+from nms_common.ws_events import publish_pending, queue_event
 
 logger = logging.getLogger("worker.correlator")
 
@@ -49,6 +50,7 @@ async def _sweep() -> None:
         await _correlate_new_down_events(db)
         await _auto_resolve(db)
         await db.commit()
+        await publish_pending(db)
 
 
 async def _is_linked(db: AsyncSession, event_id: uuid.UUID) -> bool:
@@ -171,6 +173,14 @@ async def _correlate_new_down_events(db: AsyncSession) -> None:
                 )
                 db.add(incident)
                 await db.flush()
+                queue_event(
+                    db,
+                    "incident",
+                    "created",
+                    id=incident.id,
+                    device_id=incident.suspected_device_id,
+                    confidence=incident.confidence.value,
+                )
             else:
                 incident.affected_device_count += affected_delta
                 if confidence == IncidentConfidence.SUSPECTED:
@@ -218,3 +228,4 @@ async def _auto_resolve(db: AsyncSession) -> None:
 
         incident.status = IncidentStatus.RESOLVED
         incident.resolved_at = recovered_at
+        queue_event(db, "incident", "resolved", id=incident.id, device_id=incident.suspected_device_id)

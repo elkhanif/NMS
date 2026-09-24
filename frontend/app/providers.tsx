@@ -3,7 +3,14 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 
-import { AuthProvider } from "@/lib/auth-context";
+import { AuthProvider, useAuth } from "@/lib/auth-context";
+import { useLiveUpdates } from "@/lib/ws";
+
+function LiveUpdates() {
+  const { email, loading } = useAuth();
+  useLiveUpdates(!loading && email != null);
+  return null;
+}
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -21,7 +28,10 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>{children}</AuthProvider>
+      <AuthProvider>
+        <LiveUpdates />
+        {children}
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

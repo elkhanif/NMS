@@ -59,7 +59,7 @@ async def client(db_session):
 
 @pytest_asyncio.fixture
 async def admin_user(db_session):
-    user = User(email="admin@test.local", hashed_password=hash_password("adminpass123"), role=UserRole.ADMIN)
+    user = User(email="admin@test.com", hashed_password=hash_password("adminpass123"), role=UserRole.ADMIN)
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
@@ -68,6 +68,6 @@ async def admin_user(db_session):
 
 @pytest_asyncio.fixture
 async def admin_token(client, admin_user):
-    resp = await client.post("/api/v1/auth/login", json={"email": "admin@test.local", "password": "adminpass123"})
+    resp = await client.post("/api/v1/auth/login", json={"email": "admin@test.com", "password": "adminpass123"})
     assert resp.status_code == 200
     return resp.json()["access_token"]

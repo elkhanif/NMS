@@ -15,6 +15,7 @@ from nms_common.enums import (
     MetricType,
 )
 from nms_common.models import Alert, Device, DeviceAddress, DeviceStateHistory, Event, Interface, InterfaceMetric, Metric
+from nms_common.ws_events import queue_event
 
 from worker import alert_engine
 
@@ -44,6 +45,7 @@ async def update_reachability(db: AsyncSession, device: Device, reachable: bool)
                     message=f"{device.hostname} ({device.ip_address}) recovered",
                 )
             )
+            queue_event(db, "event", "created", device_id=device.id, event_type=EventType.DEVICE_RECOVERED.value)
     elif not was_down:
         device.status = DeviceStatus.DOWN
         db.add(
@@ -54,6 +56,7 @@ async def update_reachability(db: AsyncSession, device: Device, reachable: bool)
                 message=f"{device.hostname} ({device.ip_address}) is unreachable",
             )
         )
+        queue_event(db, "event", "created", device_id=device.id, event_type=EventType.DEVICE_DOWN.value)
 
     await alert_engine.evaluate_unreachable(db, device, reachable)
 
@@ -82,6 +85,7 @@ async def record_state_transition(db: AsyncSession, device: Device, previous_sta
                 message=f"{device.hostname} ({device.ip_address}) discovered and being monitored",
             )
         )
+        queue_event(db, "event", "created", device_id=device.id, event_type=EventType.DEVICE_NEW.value)
 
     db.add(DeviceStateHistory(device_id=device.id, previous_status=previous_status, new_status=device.status))
 
@@ -144,6 +148,7 @@ async def record_address_observation(db: AsyncSession, device: Device, observed_
                 event_metadata={"old_ip": current.ip_address, "new_ip": device.ip_address},
             )
         )
+        queue_event(db, "event", "created", device_id=device.id, event_type=EventType.IP_CHANGED.value)
     if mac_changed:
         db.add(
             Event(
@@ -154,6 +159,7 @@ async def record_address_observation(db: AsyncSession, device: Device, observed_
                 event_metadata={"old_mac": current.mac_address, "new_mac": observed_mac},
             )
         )
+        queue_event(db, "event", "created", device_id=device.id, event_type=EventType.MAC_CHANGED.value)
         device.mac_address = observed_mac
 
 
@@ -234,6 +240,7 @@ async def sync_interfaces(db: AsyncSession, device: Device, snmp_interfaces: lis
                     message=f"Interface {iface.name} on {device.hostname} is {'up' if now_up else 'down'}",
                 )
             )
+            queue_event(db, "event", "created", device_id=device.id, event_type=event_type.value)
         if was_up is not None:
             await alert_engine.evaluate_interface_down(db, device, iface.id, iface.name, is_down=not now_up)
 

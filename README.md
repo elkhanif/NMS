@@ -129,13 +129,33 @@ maintained `pysnmp` package this app uses -- authPriv requests against it silent
 out with no wire-level indication of why. Test SNMPv3 against a real device or a
 net-snmp `snmpd` instead.
 
+## Live updates (WebSocket)
+
+The dashboard, alerts, events, and incidents pages get pushed live updates instead of
+waiting for their 20s poll: the worker publishes a small `{type, action, id,
+device_id}` message to Redis (`nms:live` channel) whenever it opens/resolves an alert
+or incident, or logs a device/interface/IP/MAC-change event; the API fans those out to
+every connected browser over a WebSocket, and the frontend responds by invalidating
+the relevant TanStack Query cache keys so the affected `useQuery` hooks refetch
+immediately. The 20s poll stays in place as a fallback in case a message is ever
+missed — this is a "refresh sooner" layer, not a replacement data path.
+
+Because Next.js Route Handlers can't proxy a WebSocket upgrade, the browser connects
+to the API directly (`NEXT_PUBLIC_API_WS_URL`, baked into the frontend build) instead
+of through the usual `/api/backend` proxy. The JWT still never reaches the browser:
+the client first calls the authenticated `POST /api/v1/ws/ticket` (through the normal
+proxy) to get a single-use, 30-second ticket, then opens the socket with that ticket
+as a query param. A production deployment's reverse proxy needs to forward the WS path
+to the api container too, and `NEXT_PUBLIC_API_WS_URL` needs to point at its public
+`wss://` URL.
+
 ## Running tests
 
-Tests need a reachable Postgres (plain `postgres:16` is enough — the tests use
-`Base.metadata.create_all`, not the Timescale-specific migration):
+Tests need a reachable Postgres and Redis (plain `postgres:16` is enough — the tests
+use `Base.metadata.create_all`, not the Timescale-specific migration):
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres redis
 cd backend && pip install -r requirements-dev.txt && pytest
 cd worker  && pip install -r requirements-dev.txt && pytest
 ```
@@ -176,6 +196,8 @@ emission.
   range. A full Next 15/16 upgrade would resolve the rest but is a breaking change
   this pass didn't take; consider it before any real deployment (`cd frontend && npm
   audit` to see current status).
-- No websocket push yet — the dashboard/tables poll every 15-30s via TanStack Query.
 - No reverse proxy/TLS termination in compose — add Caddy/nginx in front for anything
-  beyond local/dev use.
+  beyond local/dev use. Once added, it must also forward the WebSocket path (see "Live
+  updates" above) and `NEXT_PUBLIC_API_WS_URL` must be rebuilt to point at the public
+  `wss://` URL — a raw `docker compose up --build` with the current `.env.example`
+  default only works for local/dev where the browser can reach `API_PORT` directly.
